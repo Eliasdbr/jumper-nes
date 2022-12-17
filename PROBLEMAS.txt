@@ -1,0 +1,3 @@
+
+- Gráficos glicheados hasta que se presiona RESET (solucionado)
+- 

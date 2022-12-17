@@ -1,0 +1,2165 @@
+                                
+                                ;	Jumper (main.asm)
+                                ;	por Eliasdbr (eliasdbr@outlook.com)
+                                ;	***Escrito para ASM6 v1.6***
+                                
+                                ; Definiciones del proyecto
+                                .include "src/init.asm"
+                                ;
+                                ;	Jumper (init.asm)
+                                ;	Establece definiciones del proyecto
+                                ;	por Eliasdbr (eliasdbr@outlook.com)
+                                ;	Para la NES/Famicom
+                                ;	***Escrito para ASM6 v1.6***
+                                
+                                ;	Consumo de recursos
+                                ;	RAM: 8 bytes
+                                ;	ROM: -
+                                
+                                ;;	DEFINICIONES
+                                TRUE		EQU 1
+                                FALSE 	EQU 0
+                                NULL		EQU 0
+                                
+                                NTSC		EQU 0
+                                PAL 		EQU 1
+                                
+                                SYS_REGION = 0 	; Región del sistema.
+                                
+                                ; PLACEHOLDERS PARA EL ENSAMBLADOR
+                                ; Estas variables del ensamblador guardarán las direcciones 
+                                ; actuales de cada área para poder definir variables continuamente
+                                ; entre diferentes archivos de ASM.
+                                ASM_ZEROPAGE= 		$0000 	;Página Cero (Zero Page)
+                                ASM_DATASEGMENT=	$0300 	;Segmento de Datos (Data Segment) (Empieza la RAM)
+                                ASM_PROGRAM=			$8000 	;Programa (PRG-ROM)
+                                
+                                ; Variables de uso intensivo (8 bytes)
+                                .enum ASM_ZEROPAGE
+00000                           temp0 		.byte 0 	;Variables temporales
+00001                           temp1 		.byte 0 	;(generalmente usadas para las funciones)
+00002                           temp2 		.byte 0 	
+00003                           temp3 		.byte 0 	
+00004                           temp4 		.byte 0 	
+00005                           temp5 		.byte 0 	
+00006                           temp6 		.byte 0 	
+00007                           temp7 		.byte 0 	
+00008                           ASM_ZEROPAGE = $
+00008                           .ende
+                                
+                                ;;	MACROS
+                                ; MANIPULACIÓN DE DATOS.
+                                .macro LoadAXY ra,rx,ry 	; Carga los registros A,X,Y 	(Especificar address mode)
+                                	lda ra
+                                	ldx rx
+                                	ldy ry
+                                .endm
+                                	
+                                .macro LoadXY rx,ry 	; Carga los registros X,Y (Especificar address mode)
+                                	ldx rx
+                                	ldy ry
+                                .endm
+                                
+                                .macro MemCopy from,to		; Copia un byte desde una posición de memoria a otra. (Especificar address mode)
+                                	lda from
+                                	sta to
+                                .endm
+                                
+                                .macro MemCopy2 from1,from2,to1,to2 	; Copia 2 bytes. Cada origen con su destino. (Especificar address mode)
+                                	ldx from1
+                                	ldy from2
+                                	stx to1
+                                	sty to2
+                                .endm
+                                
+                                .macro PushAXY		; Empuja los registros A,X,Y a la pila.
+                                	pha
+                                	txa
+                                	pha
+                                	tya
+                                	pha
+                                .endm
+                                
+                                .macro PullAXY		; Saca los registros A,X,Y de la pila.
+                                	pla
+                                	tay
+                                	pla
+                                	tax
+                                	pla
+                                .endm
+                                
+                                ; PROCESAMIENTO DE DATOS.
+                                .macro Sign number	; Obtiene el signo de un número. (<0 = -1; 0 = 0, >0 = 1)	(Especificar address mode)
+                                	lda number					; carga en A un número
+                                	beq @end						; Si es 0, devuelve 0 en A.
+                                	bmi @negative 			; Si es negativo, devuelve -1.
+                                	lda #1							; si es positivo, devuelve 1.
+                                	bpl @end						; termina.
+                                	@negative:					; 
+                                	lda #-1 						; 
+                                	@end: 							; fin del macro
+                                .endm
+                                
+                                .macro Opposite number	; Devuelve en A el complemento a 2 de un número.
+                                	lda number
+                                	eor #$FF
+                                	tax
+                                	inx
+                                	txa
+                                .endm
+                                
+                                .macro Abs number	; Devuelve en A el valor absoluto de un número.
+                                	lda number
+                                	bpl @end
+                                	Opposite number
+                                	@end:
+                                .endm
+                                
+                                .macro Max n1,n2	; Devuelve en A el Máximo de 2 números. 	(Especificar address mode)
+                                	lda n1
+                                	cmp n2
+                                	bpl @end
+                                	lda n2
+                                	@end:
+                                .endm
+                                
+                                .macro Min n1,n2	; Devuelve en A el Mínimo de 2 números. 	(Especificar address mode)
+                                	lda n1
+                                	cmp n2
+                                	bmi @end
+                                	lda n2
+                                	@end:
+                                .endm
+                                
+                                .macro ToFixed8 number	; Convierte un número con signo de 8 bits en un número de punto fijo de 8 bits (SIIIFFFF)
+                                	;Si el numero es <(-8) o >(+7), devuelve error. ($FF en X)
+                                	lda number
+                                	cmp #-8
+                                	bmi @error
+                                	cmp #7
+                                	bpl @error
+                                	asl
+                                	asl			;Corre el número 4 bits a la izquierda (A*16)
+                                	asl
+                                	asl
+                                	jmp @end
+                                	@error:
+                                	ldx #$FF
+                                	@end:
+                                .endm
+                                
+                                ; Incluye el header del archivo
+                                .include "lib/header_ines.asm"			; Formato iNES
+                                ;
+                                ;	ines_header.asm
+                                ;	por Eliasdbr (eliasdbr@outlook.com)
+                                ;	Para la NES/Famicom
+                                ;	***Escrito para ASM6 v1.6***
+                                
+                                ;	NOTAS:
+                                ;	-Está todo hardcodeado, hay que generalizar junto con "init.asm"
+                                
+                                	; # - - - - - - - - - - - - #
+                                	; # - - - iNES header - - - #
+                                	; # - - - - - - - - - - - - #
+                                
+                                ; iNES identifier
+      4E 45 53 1A               .byte "NES",$1a
+                                
+                                ; Cantidad de Bloques de Programa (PRG-ROM x 16kB)(byte 4)
+      02                        .byte $02		;2x16kB = 32kB total
+                                
+                                ; Cantidad de Bloques Gráficos (CHR-ROM x 8kB)(byte 5)
+      01                        .byte $01
+                                
+                                ; Información de control del ROM (bytes 6-7)
+      01 00                     .byte %00000001 , $00
+                                ;< MMMMvtbm , MMMM---- >
+                                ;	M = 8 bits para determinar qué Mapper se usa. 0 = NROM (sin Mapper)
+                                ;	v =	No reflejar las "nametables", usar VRAM incorporada para almacenar 4 "nametables" diferentes.
+                                ;	t = Usar un "Trainer" de 512 bytes antes del PRG-ROM. (Tiene algo que ver con los Mappers)
+                                ;	b = Usar RAM alimentada con Batería(PRG-RAM).
+                                ;	m = Reflejar las 2 "nametables" verticalmente? 0 = Horizontalmente, 1 = Verticalmente
+                                ;	- = Otros flags para control de ROM que yo dejo en 0 (para más info buscar "iNES Header")
+                                
+                                ; Tamaño de la RAM alimentada por batería (PRG-RAM) (byte 8)
+      00                        .byte $00	;yo no lo uso, así que 0.
+                                
+                                ; Región de TV (byte 9)
+      00                        .byte $00	;0 = NTSC(América del norte, Japon, Oeste de Sudamérica) 
+                                			;1 = PAL(Europa, Este de Sudamérica)
+                                			; ***Algunos emuladores usan el bit 1 del BYTE 10 para esto
+                                
+                                ; Relleno (bytes 10-15)
+      00 00 00 00 00 00         .byte $00,$00,$00,$00,$00,$00
+                                
+                                
+                                .org ASM_PROGRAM										; Comienza a ensamblar código
+08000                           
+08000                           ; Incluir librerías
+08000                           .include "lib/nes_ppu.asm"					; Manejo de gráficos
+08000                           ;
+08000                           ;	Librería que maneja la PPU (nes_ppu.asm)
+08000                           ;	por Eliasdbr (eliasdbr@outlook.com)
+08000                           ;	Para la NES/Famicom 
+08000                           ;	***Escrito para ASM6 v1.6***
+08000                           
+08000                           	; # - - - - - - - - - - - - - - - - - - - #
+08000                           	; # - - - Constantes del Assembler  - - - #
+08000                           	; # - - - - - - - - - - - - - - - - - - - #
+08000                           
+08000                           ;;	REGRISTROS DE LA PPU
+08000                           PPUCTRL= $2000			;PPU Control Register
+08000                           PPUMASK= $2001			;PPU Mask Register
+08000                           PPUSTAT= $2002			;PPU Status Register
+08000                           OAMADDR= $2003			;PPU OAM Address
+08000                           OAMDATA= $2004			;PPU OAM Data
+08000                           PPUSCRL= $2005			;PPU Fine Scroll (two writes= X, Y)
+08000                           PPUADDR= $2006			;PPU Address
+08000                           PPUDATA= $2007			;PPU Data
+08000                           OAMDMA=  $4014			;OAM DMA Page (parte alta)
+08000                           
+08000                           ;;	DIRECCIONES DENTRO DE LA PPU
+08000                           PPUNAM0 = $2000		;PPU Name Table 0
+08000                           PPUNAM1 = $2400		;PPU Name Table 1
+08000                           PPUNAM2 = $2800		;PPU Name Table 2
+08000                           PPUNAM3 = $2C00		;PPU Name Table 3
+08000                           PPUPAL	= $3F00		;PPU Palettes
+08000                           
+08000                           ;;	DIRECCIONES GENERALES
+08000                           OAM_PAGE= $0200		;dirección donde empieza la tabla de objetos(sprites)
+08000                           
+08000                           ;;	FLAGS
+08000                           ;PPU Control ($2000) write
+08000                           PPUCTRL_NMI_ENABLE 	= $80	; Permite a la PPU activar el interrupt NMI
+08000                           PPUCTRL_MASTER	   	= $40	; Siempre poner en 0. Inútil si la consola no está hackeada.
+08000                           PPUCTRL_8X16_SPR	= $20	; 0: utiliza sprites de 8x8. 1: Utiliza sprites de 8x16
+08000                           PPUCTRL_BG_PATTERN	= $10	; Ubicación de los tiles de fondo en CHR-ROM. 0: $0000. 1: $1000.
+08000                           PPUCTRL_SPR_PATTERN	= $08	; Ubicación de los tiles de sprites en CHR-ROM. 0: $0000. 1: $1000.
+08000                           PPUCTRL_ADDR_INC	= $04	; Cantidad que incrementa PPUADDR por cada lectura/escritura del CPU. 0: +1. 1: +32
+08000                           ;PPU Mask ($2001) write
+08000                           PPUMASK_EMPHASIZE_BLUE 	= $80			; Enfatiza el color azul
+08000                           if SYS_REGION==0						; Dependiendo de la Región(NTSC o PAL), se define las flags de red y green
+08000                           	PPUMASK_EMPHASIZE_GREEN = $40		;  Enfatiza el color verde
+08000                           	PPUMASK_EMPHASIZE_RED	= $20		;  Enfatiza el color rojo
+08000                           else
+08000                           	PPUMASK_EMPHASIZE_RED 	= $40
+08000                           	PPUMASK_EMPHASIZE_GREEN	= $20
+08000                           endif
+08000                           PPUMASK_SHOW_SPR		= $10			; Mostrar sprites.
+08000                           PPUMASK_SHOW_BG 		= $08			; Mostrar Fondo.
+08000                           PPUMASK_LEFTMOST_SPR	= $04			; Mostrar los primeros 8 píxeles desde la izquierda (sprites).
+08000                           PPUMASK_LEFTMOST_BG 	= $02			; Mostrar los primeros 8 píxeles desde la izquierda (fondo).
+08000                           PPUMASK_GRAYSCALE		= $01			; Modo blanco y negro.
+08000                           ;PPU Status ($2002) read
+08000                           PPUSTAT_VBLANK = $80		; VBlank ha comenzado
+08000                           PPUSTAT_SPR0_HIT = $40		; Sprite 0 Hit. Se usa para interrupts a mitad del frame
+08000                           PPUSTAT_SPR_LIMIT = $20		; Sprite Overflow. Inestable, no tiene utilidad.
+08000                           
+08000                           ;Sprite Attributes
+08000                           SPRATTR_VFLIP= %10000000		;Atributo del sprite: Voltear verticalmente
+08000                           SPRATTR_HFLIP= %01000000		;Atributo del sprite: Voltear horizontalmente
+08000                           SPRATTR_BEHIND= %00100000		;Atributo del sprite: Detrás del Fondo
+08000                           
+08000                           ;Sprite Info Offsets
+08000                           SPRINFO_Y = 0 		; Posición Y
+08000                           SPRINFO_TILE = 1	; Tile del Sprite
+08000                           SPRINFO_ATTR = 2	; Atributos del sprite
+08000                           SPRINFO_X = 3 		; Posición X
+08000                           
+08000                           ;;	VARIABLES
+08000                           .enum ASM_ZEROPAGE				;- - Variables de uso intensivo - -
+00008                           ; 2 bytes
+00008                           scroll_x		.byte 0		;Posición x de la cámara
+00009                           scroll_y		.byte 0		;Posición y de la cámara
+0000A                           
+0000A                           ASM_ZEROPAGE = $					;
+0000A                           .ende						;- - Fin de reserva de variables - -
+08000                           
+08000                           ; # - - - - - - - - - - - - - - #
+08000                           ; # - - - 	MACROS	 	  - - - #
+08000                           ; # - - - - - - - - - - - - - - #
+08000                           ;;	Activar el PPU con los parámetros establecidos
+08000                           .macro PPU_Enable control,mask
+08000                           	lda #control
+08000                           	sta PPUCTRL
+08000                           	lda #mask
+08000                           	sta PPUMASK
+08000                           .endm
+08000                           
+08000                           ;;	Desactivar el PPU
+08000                           .macro PPU_Disable
+08000                           	lda #0
+08000                               sta PPUCTRL  ; disable NMI
+08000                               sta PPUMASK  ; disable rendering
+08000                           .endm
+08000                           
+08000                           ;;	Inicializa la tabla de sprites
+08000                           .macro PPU_InitOAM
+08000                           	lda #$FF
+08000                           	ldx #$00
+08000                           -	sta OAM_PAGE,x
+08000                           	inx
+08000                           	bne -
+08000                           .endm
+08000                           
+08000                           ;;	Actualiza el Scroll del Fondo
+08000                           .macro PPU_ScrollUpdate
+08000                           	ldx scroll_x
+08000                           	ldy scroll_y
+08000                           	stx PPUSCRL
+08000                           	sty PPUSCRL
+08000                           .endm
+08000                           
+08000                           ; # - - - - - - - - - - - - - - - - - - - - #
+08000                           ; # - - - Sub-Rutinas (Funciones) 	  - - - #
+08000                           ; # - - - - - - - - - - - - - - - - - - - - #
+08000                           .base ASM_PROGRAM
+08000                           	
+08000                           ;	CARGA UN SPRITE EN LA TABLA OAM		Parámetros: ypos,tile,attributes,xpos
+08000                           ;	Parámetros:
+08000                           ;		A: Sprite ID (0-63)
+08000                           ;		X: puntero del sprite a copiar (byte bajo)
+08000                           ;		Y: puntero del sprite a copiar (byte alto)
+08000                           ;	Ocupa:
+08000                           ;		temp0: puntero del sprite a copiar (byte bajo)
+08000                           ;		temp1: puntero del sprite a copiar (byte alto)
+08000                           PPU_loadSprite:
+08000                           	spr_data = temp0	; Utiliza las variables temp0 y temp1 para almacenar la dirección del sprite.
+08000                           
+08000 86 00                     	stx spr_data		; transfiere la dirección del sprite de origen
+08002 84 01                     	sty spr_data+1		; a la página cero liberando así los registros X,Y.
+08004                           	
+08004 0A                        	asl					; 
+08005 0A                        	asl					; X = A * 4		// Transforma el ID del Sprite en un offset de la Tabla de sprites
+08006 AA                        	tax					; 	
+08007 A0 00                     	ldy #0				; Y = 0			// Usará Y como puntero de propiedades del sprite
+08009                           	
+08009 B1 00                     -	lda (spr_data),y	; Copia la propiedad del sprite de origen
+0800B 9D 00 02                  	sta OAM_PAGE,x	; La pega en el offset de la Tabla de sprites
+0800E E8                        	inx					;
+0800F C8                        	iny					; Pasa a la siguiente propiedad
+08010 C0 04                     	cpy #4				; 
+08012 D0 F5                     	bne -				; Hacer lo mismo con las 4 propiedades
+08014                           	
+08014 60                        	rts					; fin de sub-rutina
+08015                           
+08015                           ;	CARGA UNA PALETA (16 colores)
+08015                           ;	Parámetros:
+08015                           ;		A: Offset de dirección de paleta (0 = Background; 16 = Sprites)
+08015                           ;		X: puntero de la paleta a copiar (byte bajo)
+08015                           ;		Y: puntero de la paleta a copiar (byte alto)
+08015                           ;	Ocupa:
+08015                           ;		temp0: puntero de la paleta a copiar (byte bajo)
+08015                           ;		temp1: puntero de la paleta a copiar (byte alto)
+08015                           PPU_loadPalette:
+08015                           	pal_data = temp0 	; Utiliza las variables temp0 y temp1 para almacenar la dirección de la paleta.
+08015                           	
+08015 86 00                     	stx pal_data		; transfiere la dirección de la paleta de origen
+08017 84 01                     	sty pal_data+1		; a la página cero, liberando así los registros X,Y
+08019                           	
+08019 A2 3F                     	ldx #>PPUPAL		; Dirección de las paletas dentro de la memoria de la PPU.
+0801B 8E 06 20                  	stx PPUADDR			; El CPU le avisa a la PPU que le va a enviar
+0801E 8D 06 20                  	sta PPUADDR			; datos a esa dirección de su memoria (PPUPAL) (byte alto, byte bajo)
+08021                           	
+08021 A0 00                     	ldy #0				; Y = 0.
+08023 B1 00                     -	lda (pal_data),y	; Copia esos datos desde pal_data
+08025 8D 07 20                  	sta PPUDATA			; Los envía uno por uno
+08028 C8                        	iny					; pasa al siguiente
+08029 C0 10                     	cpy #$10			; 
+0802B D0 F6                     	bne -				; Si llegó a los 16 colores, termina.
+0802D                           	
+0802D 60                        	rts					; Fin de la sub-rutina.
+0802E                           
+0802E                           ;	CARGA UNA PANTALLA EN EL NAMETABLE DETERMINADO (0-3)
+0802E                           ;	Parámetros:
+0802E                           ;		A: Nametable (0 - 3)
+0802E                           ;		X: puntero de la pantalla a copiar (byte bajo)
+0802E                           ;		Y: puntero de la pantalla a copiar (byte alto)
+0802E                           ;	Ocupa:
+0802E                           ;		temp0: puntero de la pantalla a copiar (byte bajo)
+0802E                           ;		temp1: puntero de la pantalla a copiar (byte alto)
+0802E                           PPU_loadScreen:
+0802E                           	scr_data = temp0	; puntero de la pantalla a copiar
+0802E 86 00                     	stx scr_data			; Escribe la dirección de la pantalla a copiar
+08030 84 01                     	sty scr_data+1		; en temp0 (parte baja) y temp1 (parte alta) Libera X, Y.
+08032                           	
+08032 0A                        	asl 					; A *= 4	// Convierte el N° de nametable en su offset				A | PPUADDR
+08033 0A                        	asl 					; 				// correspondiente dentro de la memoria de la ppu. ---+---------
+08034 18                        	clc 					; 																														0 | $2000
+08035 69 20                     	adc #>PPUNAM0		; Agrega el offset a la dirección de la nametable.					1 | $2400
+08037 A2 00                     	ldx #0				; X = 0.																											2 | $2800
+08039 8D 06 20                  	sta PPUADDR			; El CPU le avisa a la PPU que le va a enviar 							3 | $2C00
+0803C 8E 06 20                  	stx PPUADDR			; datos a esa dirección de su memoria (PPUNAMx)
+0803F                           	
+0803F A0 00                     	ldy #0				; Y = 0
+08041 A2 04                     	ldx #4				; X = 4	// X cuenta las páginas que quedan copiar de la pantalla (4 * 256 = 1024 bytes)
+08043 B1 00                     -	lda (scr_data),y	; Copia esos datos desde scr_data
+08045 8D 07 20                  	sta PPUDATA			; Los envía uno por uno.
+08048 C8                        	iny					; Pasa al siguiente.
+08049 D0 F8                     	bne -				; Si no completó una página, vuelve a enviar otro byte. 
+0804B E6 01                     	inc scr_data+1		; Pasa a la siguiente página de 256 bytes.
+0804D CA                        	dex					;
+0804E D0 F3                     	bne -				; Si el contador X no llegó a 0, quedan páginas por copiar.
+08050                           	
+08050 60                        	rts					; Fin de la sub-rutina.
+08051                           
+08051                           ; Fin del código
+08051                           ASM_PROGRAM = $
+08051                           .include "lib/nes_interrupts.asm" 	; Interrupts RESET,NMI,IRQ
+08051                           ;
+08051                           ;	Interrupciones del Hardware
+08051                           ;	por Eliasdbr (eliasdbr@outlook.com)
+08051                           ;	Para la NES/Famicom 
+08051                           ;	***Escrito para ASM6 v1.6***
+08051                           
+08051                           ;;	CONSTANTES
+08051                           
+08051                           
+08051                           ;;	VARIABLES
+08051                           .enum ASM_ZEROPAGE			;- - Variables de uso intensivo - -
+0000A                           ; 1 byte
+0000A                           waiting_nmi		.byte 0		;flag para determinar si se debe esperar al NMI
+0000B                           
+0000B                           ASM_ZEROPAGE = $			;
+0000B                           .ende						;- - Fin de reserva de variables - -
+08051                           
+08051                           ;;	MACROS
+08051                           
+08051                           
+08051                           ; # - - - - - - - - - - - - - - - - - - - - #
+08051                           ; # - - - Código ubicado en la ROM 	  - - - #
+08051                           ; # - - - - - - - - - - - - - - - - - - - - #
+08051                           .base ASM_PROGRAM
+08051                           ;A partir de aquí escribiremos el programa que se ejecutará al Encender/Resetear la consola.
+08051                           RESET:
+08051 78                            sei        ; ignore IRQs
+08052 D8                            cld        ; disable decimal mode
+08053 A2 40                         ldx #$40
+08055 8E 17 40                      stx $4017  ; disable APU frame IRQ
+08058 A2 FF                         ldx #$ff
+0805A 9A                            txs        ; Set up stack
+0805B                           	
+0805B                           	; Desactiva los gráficos
+0805B                               PPU_Disable	0	;es un macro.
+0805B A9 00                     	lda #0
+0805D 8D 00 20                      sta PPUCTRL  ; disable NMI
+08060 8D 01 20                      sta PPUMASK  ; disable rendering
+08063                           
+08063                               ; Optional (omitted):
+08063                               ; Set up mapper and jmp to further init code here.
+08063                           
+08063                               ; The vblank flag is in an unknown state after reset,
+08063                               ; so it is cleared here to make sure that @vblankwait1
+08063                               ; does not exit immediately.
+08063 2C 02 20                      bit $2002
+08066                           
+08066                               ; First of two waits for vertical blank to make sure that the
+08066                               ; PPU has stabilized
+08066                           @vblankwait1:  
+08066 2C 02 20                      bit $2002
+08069 10 FB                         bpl @vblankwait1
+0806B                           
+0806B                               ; We now have about 30,000 cycles to burn before the PPU stabilizes.
+0806B                               ; One thing we can do with this time is put RAM in a known state.
+0806B                               ; Here we fill it with $00, which matches what (say) a C compiler
+0806B                               ; expects for BSS.  Conveniently, X is still 0.
+0806B 8A                            txa
+0806C                           @clrmem:
+0806C 95 00                         sta $000,x
+0806E 9D 00 01                      sta $100,x
+08071 9D 00 02                      sta $200,x
+08074 9D 00 03                      sta $300,x
+08077 9D 00 04                      sta $400,x
+0807A 9D 00 05                      sta $500,x
+0807D 9D 00 06                      sta $600,x
+08080 9D 00 07                      sta $700,x
+08083 E8                            inx
+08084 D0 E6                         bne @clrmem
+08086                           	
+08086                               ; Other things you can do between vblank waits are set up audio
+08086                               ; or set up other mapper registers.
+08086                              
+08086                           @vblankwait2:
+08086 2C 02 20                      bit $2002
+08089 10 FB                         bpl @vblankwait2
+0808B                           
+0808B                           	PPU_InitOAM 	;Limpia la memoria de sprites (es un macro)
+0808B A9 FF                     	lda #$FF
+0808D A2 00                     	ldx #$00
+0808F 9D 00 02                  -	sta OAM_PAGE,x
+08092 E8                        	inx
+08093 D0 FA                     	bne -
+08095                           	
+08095                           	; LO QUE VIENE ES SÓLO DE JUMPER
+08095                           	; Carga el sprite de Ogmo
+08095 A2 E0                     	ldx #<sprite_ogmo	;byte bajo
+08097 A0 8E                     	ldy #>sprite_ogmo	;byte alto
+08099 A9 01                     	lda #1				;ID del Sprite 1
+0809B 20 00 80                  	jsr PPU_loadSprite
+0809E                           	
+0809E                           	; Carga el sprite de Ogmo Azul
+0809E A2 E0                     	ldx #<sprite_ogmo	;byte bajo
+080A0 A0 8E                     	ldy #>sprite_ogmo	;byte alto
+080A2 A9 02                     	lda #2				;ID del Sprite 2
+080A4 20 00 80                  	jsr PPU_loadSprite
+080A7                           	; Igual a Ogmo, sólo que con la paleta azul
+080A7 A9 03                     	lda #3
+080A9 8D 0A 02                  	sta OAM_PAGE+2*4+2	; Sprite 2, atributos
+080AC                           	
+080AC                           	; Carga la paleta del fondo
+080AC A2 C0                     	ldx #<palette	;dirección byte bajo
+080AE A0 8E                     	ldy #>palette	;dirección byte alto
+080B0 A9 00                     	lda #0			;A=0 -> Paleta del Fondo
+080B2 20 15 80                  	jsr PPU_loadPalette
+080B5                           	
+080B5                           	; Carga la paleta de sprites
+080B5 A2 D0                     	ldx #<(palette+16)	;dirección byte bajo
+080B7 A0 8E                     	ldy #>palette		;dirección byte alto
+080B9 A9 10                     	lda #16				;A=16 -> Paleta de Sprites
+080BB 20 15 80                  	jsr PPU_loadPalette
+080BE                           	
+080BE                           	; FIN DEL CÓDIGO DE JUMPER
+080BE                           	
+080BE                           	; Activar Vblank NMI, Sprites: $0000, Fondo: $1000
+080BE                           	ctrl_flags = PPUCTRL_NMI_ENABLE | PPUCTRL_BG_PATTERN
+080BE                           	; Muestra los sprites y el fondo
+080BE                           	mask_flags = PPUMASK_SHOW_SPR | PPUMASK_SHOW_BG
+080BE                           	; Reactiva los gráficos
+080BE                           	PPU_Enable ctrl_flags,mask_flags		;es un macro.
+080BE A9 90                     	lda #ctrl_flags
+080C0 8D 00 20                  	sta PPUCTRL
+080C3 A9 18                     	lda #mask_flags
+080C5 8D 01 20                  	sta PPUMASK
+080C8                           
+080C8                           	;Otra instrucción que requiere la consola, iría al finalizar la preparación del juego.
+080C8 58                        	cli		;Permitir IRQs
+080C9                           	
+080C9                           	; Fin de la inicialización
+080C9 4C A3 84                  	jmp main_setup		;salta al arranque del juego
+080CC                           
+080CC                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
+080CC                           ; # - - - VBLANK (ya se dibujó el frame anterior. preparar el que sigue   - - - #
+080CC                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
+080CC                           ; Nota: colocar aquí SÓLO la info para actualizar gráficos, ya que el tiempo que disponemos para 
+080CC                           ;		hacerlo es relativamente corto, así que todo lo que tenga que ver con las mecánicas y la
+080CC                           ;		lógica del juego debe ir más arriba(en la parte de loop principal del juego).
+080CC                           NMI:
+080CC                           	PushAXY		; Macro. Llevamos los registros del procesador a la pila (A,X,Y)
+080CC 48                        	pha
+080CD 8A                        	txa
+080CE 48                        	pha
+080CF 98                        	tya
+080D0 48                        	pha
+080D1                           	; Le pasa al PPU la dirección de los sprites
+080D1 A9 02                     	lda #>OAM_PAGE
+080D3 8D 14 40                  	sta OAMDMA
+080D6                           	; Lo último que se debe hacer antes de terminar es actualizar el valor del Scroll
+080D6                           	PPU_ScrollUpdate	;Macro. obtiene las coordenadas del Scroll desde la memoria de página cero.
+080D6 A6 08                     	ldx scroll_x
+080D8 A4 09                     	ldy scroll_y
+080DA 8E 05 20                  	stx PPUSCRL
+080DD 8C 05 20                  	sty PPUSCRL
+080E0                           	; La PPU ya está lista y le dice al CPU que deje de esperar
+080E0 A9 00                     	lda #$00
+080E2 85 0A                     	sta waiting_nmi
+080E4                           	; Una vez finalizadas todas las tareas de dibujado, restauramos los registros y volvemos.
+080E4                           	PullAXY		; Macro. Saca los registros A,X,Y de la pila.
+080E4 68                        	pla
+080E5 A8                        	tay
+080E6 68                        	pla
+080E7 AA                        	tax
+080E8 68                        	pla
+080E9 40                        	rti
+080EA                           
+080EA                           ; En caso de haber un IRQ, saltará acá.
+080EA                           IRQ:
+080EA                           	;No pasará nada
+080EA 40                        	rti
+080EB                           
+080EB                           ASM_PROGRAM = $
+080EB                           .include "lib/nes_io.asm" 					; Joypads
+080EB                           ;
+080EB                           ;	Librería de interfaz de usuario (joysticks)
+080EB                           ;	por Eliasdbr (eliasdbr@outlook.com)
+080EB                           ;	Para la NES/Famicom 
+080EB                           
+080EB                            
+080EB                           ;
+080EB                           ;	***Escrito para ASM6 v1.6***
+080EB                           
+080EB                           ;; CONSTANTES
+080EB                           ;;	REGISTROS DEL HARDWARE
+080EB                           JOYPAD1= $4016			;Joypad 1
+080EB                           JOYPAD2= $4017			;Joypad 2
+080EB                           
+080EB                           
+080EB                           ;;	FLAGS 
+080EB                           JP_A=		%10000000		;Botón Joypad 'A'
+080EB                           JP_B=		%01000000		;Botón Joypad 'B'
+080EB                           JP_SELECT= 	%00100000		;Botón Joypad 'Select'
+080EB                           JP_START=	%00010000		;Botón Joypad 'Start'
+080EB                           JP_UP=		%00001000		;Botón Joypad 'Up'
+080EB                           JP_DOWN=	%00000100		;Botón Joypad 'Down'
+080EB                           JP_LEFT=	%00000010		;Botón Joypad 'Left'
+080EB                           JP_RIGHT=	%00000001		;Botón Joypad 'Right'
+080EB                           
+080EB                           
+080EB                           ;;	VARIABLES PÁGINA CERO
+080EB                           .enum ASM_ZEROPAGE
+0000B                           ; 4 bytes
+0000B                           joypad1 			.byte 0		;estados de los botones del jugador 1
+0000C                           joypad1_prev	.byte 0		;estado de los botones del jugador 1 en el frame anterior.
+0000D                           joypad2 			.byte 0		;estados de los botones del jugador 2
+0000E                           joypad2_prev	.byte 0		;estado de los botones del jugador 2 en el frame anterior. 
+0000F                           
+0000F                           ASM_ZEROPAGE = $
+0000F                           .ende
+080EB                           
+080EB                           ;;	SEGMENTO DE DATOS
+080EB                           ; Nada aún.
+080EB                           
+080EB                           ;;	MACROS
+080EB                           
+080EB                           ; Chequea si el botón determinado está presionado o no. (Usa A)
+080EB                           ; 	player: (1,2) qué jugador chequea
+080EB                           ; 	button: (flag) qué botón chequea
+080EB                           ; 	justpressed: (bool) chequea si comenzó a presionarse en el frame actual
+080EB                           .macro IO_CheckButton player,button,justpressed
+080EB                           	lda joypad1 + (player - 1)*2
+080EB                           	and #button
+080EB                           	beq @end
+080EB                           	IF justpressed
+080EB                           		eor joypad1_prev + (player - 1)*2
+080EB                           		and #button
+080EB                           	ENDIF
+080EB                           	@end:
+080EB                           	cmp #0
+080EB                           	; Regresa el estado de la flag "Zero"
+080EB                           	; También deja el estado del botón en A.
+080EB                           	; (A == 0: Falso -- A != 0: Verdadero)
+080EB                           .endm
+080EB                           ;OBTENER DATOS DE LOS CONTROLES
+080EB                           .macro IO_JoyUpdate
+080EB                           	; Actualiza los botones previos
+080EB                           	ldx joypad1
+080EB                           	ldy joypad2
+080EB                           	stx joypad1_prev
+080EB                           	sty joypad2_prev
+080EB                           	; Actualiza los botones actuales
+080EB                           	lda #$01
+080EB                           	sta joypad1 	;le ponemos 1 a joypad1 para indicar cuándo llega a mirar los 8 botones.
+080EB                           	sta joypad2 	; repetir con el joystick 2
+080EB                           	sta JOYPAD1 	;decirle a los controles(joysticks) #1 y #2 que miren qué botones se están apretando.
+080EB                           	sta JOYPAD2 	; repetir con el joystick 2
+080EB                           	lda #$00
+080EB                           	sta JOYPAD1 	;decirle al control(joystick) #1 que guarde lo botones que miró.
+080EB                           	sta JOYPAD2 	; repetir con el joystick 2
+080EB                           	; Ahora le pediremos al joystick si los botones estaban presionados o no, uno por uno.
+080EB                           	clc
+080EB                           	-
+080EB                           	lda JOYPAD1 	;preguntamos el estado del botón actual
+080EB                           	lsr 					;mete el estado del botón actual en el carry flag.
+080EB                           	rol joypad1 	;pone el bit7 en el Carry y lo que estaba en el Carry lo manda al bit0
+080EB                           	bcc - 				;si se obtienen los 8 botones, el carry estará en 1, si no, volvemos a pedir un boton.
+080EB                           	clc 					;
+080EB                           	-
+080EB                           	lda JOYPAD2 	; repetir con el joystick 2
+080EB                           	lsr 					;
+080EB                           	rol joypad2 	;
+080EB                           	bcc - 				;
+080EB                           .endm
+080EB                           
+080EB                           ; # - - - - - - - - - - - - - - - - - - - - #
+080EB                           ; # - - - Sub-Rutinas (Funciones) 	  - - - #
+080EB                           ; # - - - - - - - - - - - - - - - - - - - - #
+080EB                           
+080EB                           ;; Agregar obtención de controles en modo seguro (DCPM)
+080EB                           
+080EB                           
+080EB                           ;; FINALIZA DE DEFNIR SUB-RUTINAS
+080EB                           .include "lib/move.asm" 						; Movimiento y posición
+080EB                           ;
+080EB                           ;	Librería de Movimiento de sprites (move.asm)
+080EB                           ;	por Eliasdbr (eliasdbr@outlook.com)
+080EB                           ;	Para la NES/Famicom 
+080EB                           ;	***Escrito para ASM6 v1.6***
+080EB                           ;	
+080EB                           
+080EB                           ;;	DEFINICIONES
+080EB                           
+080EB                           
+080EB                           ;;	VARIABLES DE PÁGINA CERO
+080EB                           
+080EB                           
+080EB                           ;;	OTRAS VARIABLES
+080EB                           
+080EB                           
+080EB                           ;;	MACROS
+080EB                           
+080EB                           ; Suma la velocidad en un eje a la posición especificada (especificar addressing mode)
+080EB                           .macro MOVE_ApplyVelocityAxis pos,vel
+080EB                           	clc
+080EB                           	lda pos
+080EB                           	adc vel
+080EB                           	sta pos
+080EB                           .endm
+080EB                           
+080EB                           ; Suma la velocidad en un eje a la posición especificada (incluye sub-pixel) (especificar addressing mode)	
+080EB                           .macro MOVE_ApplyVelocityAxisSub pos,pos_sub,vel,vel_sub
+080EB                           	clc 						;
+080EB                           	lda pos_sub,x 	;
+080EB                           	adc vel_sub 		;
+080EB                           	sta pos_sub,x 	;
+080EB                           	lda pos,x 			;
+080EB                           	adc vel 				;
+080EB                           	sta pos,x 			;
+080EB                           .endm
+080EB                           
+080EB                           .base ASM_PROGRAM
+080EB                           ;;	SUB-RUTINAS
+080EB                           
+080EB                           ; Establece la velocidad en UN sólo eje (X/Y) tomando el input del Joypad (<>/^V)
+080EB                           ; Parámetros:
+080EB                           ;	A: Velocidad a establecer.
+080EB                           ;	X: Estado de los botones del Joypad.
+080EB                           ;	Y: 0: Botones < >, Botones ^ v.
+080EB                           ;	temp0: byte bajo de la dirección de la posición a mover.
+080EB                           ;	temp1: byte alto de la dirección de la posición a mover.
+080EB                           ; Ocupa:
+080EB                           ;	temp2-5: 4 bytes para tabla de velocidades (0,vel,-vel,0)
+080EB                           MOVE_joyVelAxis:
+080EB                           	target = temp0
+080EB                           	table = temp2	
+080EB 85 03                     	sta table+1		; Guarda la velocidad positiva en la tabla
+080ED 49 FF                     	eor #$FF		; (convierte la velocidad en su negativo usando el complemento a 2)
+080EF 85 04                     	sta table+2		; Guarda la velocidad negativa en la tabla
+080F1 E6 04                     	inc table+2		; Registro A queda liberado.	
+080F3 A9 00                     	lda #0			
+080F5 85 02                     	sta table		; Pone el primer y último byte de table en 0.
+080F7 85 05                     	sta table+3		; 
+080F9                           	
+080F9 8A                        	txa				; A = Botones del d-pad
+080FA C0 00                     	cpy #0			; Pregunta si se está tomando los botones arriba/abajo (%00001100 del joypad)
+080FC F0 02                     	beq +			; De ser así...
+080FE 4A                        	lsr				; los corre 2 veces a la derecha (%00000011)
+080FF 4A                        	lsr				;
+08100 29 03                     +	and #3			; En cualquier caso, sólo nos interesa los 2 bits menos significativos.
+08102 AA                        	tax				; almacena el resultado en X, se usará como puntero para la Tabla.
+08103                           	
+08103 A0 00                     	ldy #0			; Y = 0.
+08105 B5 02                     	lda table,x		; Obtiene la velocidad correspondiente dependiendo de lo que se estaba presionando.
+08107 91 00                     	sta (target),y 	; Guarda la velocidad en su variable
+08109                           	
+08109 60                        	rts				; Fin de sub-rutina
+0810A                           
+0810A                           ; Movimiento básico sobre UN sólo eje (X/Y) tomando el input del Joypad (<>/^V)
+0810A                           ; Parámetros:
+0810A                           ;	A: Velocidad a mover.
+0810A                           ;	X: Estado de los botones del Joypad.
+0810A                           ;	Y: 0: Botones < >, Botones ^ v.
+0810A                           ;	temp0: byte bajo de la dirección de la posición a mover.
+0810A                           ;	temp1: byte alto de la dirección de la posición a mover.
+0810A                           ; Ocupa:
+0810A                           ;	temp2-5: 4 bytes para tabla de velocidades (0,vel,-vel,0)
+0810A                           MOVE_joyBasicAxis:
+0810A                           	target = temp0
+0810A                           	table = temp2	
+0810A 85 03                     	sta table+1		; Guarda la velocidad positiva en la tabla
+0810C 49 FF                     	eor #$FF		; (convierte la velocidad en su negativo usando el complemento a 2)
+0810E 85 04                     	sta table+2		; Guarda la velocidad negativa en la tabla
+08110 E6 04                     	inc table+2		; Registro A queda liberado.	
+08112 A9 00                     	lda #0			
+08114 85 02                     	sta table		; Pone el primer y último byte de table en 0.
+08116 85 05                     	sta table+3		; 
+08118                           	
+08118 8A                        	txa				; A = Botones del d-pad
+08119 C0 00                     	cpy #0			; Pregunta si se está tomando los botones arriba/abajo (%00001100 del joypad)
+0811B F0 02                     	beq +			; De ser así...
+0811D 4A                        	lsr				; los corre 2 veces a la derecha (%00000011)
+0811E 4A                        	lsr				;
+0811F 29 03                     +	and #3			; En cualquier caso, sólo nos interesa los 2 bits menos significativos.
+08121 AA                        	tax				; almacena el resultado en X, se usará como puntero para la Tabla.
+08122                           	
+08122 A0 00                     	ldy #0			; Y = 0.
+08124 18                        	clc				; Carry Bit = 0.
+08125 B1 00                     	lda (target),y	; A = Posición actual del objeto a procesar pero sólo en un eje (X/Y).
+08127 75 02                     	adc table,x		; Le suma su velocidad correspondiente dependiendo de lo que se estaba presionando.
+08129 91 00                     	sta (target),y 	; Guarda la posición ya modificada.
+0812B                           	
+0812B 60                        	rts				; Fin de sub-rutina
+0812C                           ; FIN DE SUB-RUTINA
+0812C                           	
+0812C                           ASM_PROGRAM = $
+0812C                           .include "lib/collide.asm"					; Detección de colisiones
+0812C                           ;
+0812C                           ;	Librería para colisiones
+0812C                           ;	por Eliasdbr (eliasdbr@outlook.com)
+0812C                           ;	Para la NES/Famicom 
+0812C                           ;	***Escrito para ASM6 v1.6***
+0812C                           
+0812C                           ;;	DEFINICIONES
+0812C                           
+0812C                           
+0812C                           ;;	VARIABLES DE PÁGINA CERO
+0812C                           
+0812C                           
+0812C                           ;;	OTRAS VARIABLES
+0812C                           
+0812C                           
+0812C                           ;;	MACROS
+0812C                           ;	Detecta colisión entre dos rectángulos		(Especificar addressing mode)
+0812C                           ;	Ocupa temp0-4, A,X,Y
+0812C                           .macro COLL_Rect rx1,ry1,rw1,rh1,rx2,ry2,rw2,rh2
+0812C                           	;Chequea colisiones en eje X
+0812C                           	MemCopy2 rx1,rw1,temp0,temp1
+0812C                           	MemCopy2 rx2,rw2,temp2,temp3
+0812C                           	jsr COLL_rectAxis
+0812C                           	beq + 										; Si no hay colisión en un eje, no habrá colisión.
+0812C                           	;Chequea colisiones en eje Y
+0812C                           	MemCopy2 ry1,rh1,temp0,temp1
+0812C                           	MemCopy2 ry2,rh2,temp2,temp3
+0812C                           	jsr COLL_rectAxis
+0812C                           +
+0812C                           .endm
+0812C                           
+0812C                           ; Consulta si un punto en X y Y colisiona con un tile en el mapa de tiles (se puede agregar offset)
+0812C                           ; ATENCIÓN, se debe especificar en temp0 y temp1 la dirección del mapa de tiles. parte baja y alta respectivamente.
+0812C                           ; Se le puede agregar un offset de dirección en el registro X. Dejar en 0 si no se quiere usar
+0812C                           .macro COLL_PointInBitmap8 xpos,ypos,xoffset,yoffset
+0812C                           	stx temp6 		; Guarda qué jugador está procesando temporalmente
+0812C                           	;posición x
+0812C                           	lda xpos,x
+0812C                           	clc
+0812C                           	adc #xoffset
+0812C                           	lsr
+0812C                           	lsr
+0812C                           	lsr
+0812C                           	sta temp7 		; Guarda la posicion X en temp7
+0812C                           	;posición y
+0812C                           	lda ypos,x
+0812C                           	clc
+0812C                           	adc #yoffset
+0812C                           	lsr
+0812C                           	lsr
+0812C                           	lsr
+0812C                           	tay					; posicion tile Y
+0812C                           	ldx temp7		; posicion tile X
+0812C                           	jsr COLL_TileBitmap8
+0812C                           	ldx temp6 	; recupera el jugador que estaba procesando
+0812C                           .endm
+0812C                           
+0812C                           ; Consulta si Un rectángulo está colisionando con un tile del mapa de tiles.
+0812C                           ; tlx,tly --- trx,try
+0812C                           ;    |           |
+0812C                           ;    |           |
+0812C                           ;    |           |
+0812C                           ;    |           |
+0812C                           ; blx,bly --- brx,bry
+0812C                           .macro COLL_SquareInTile8 xpos,ypos,coll_addr,tlx,tly,trx,try,blx,bly,brx,bry
+0812C                           	; temp3 = coll_flags
+0812C                           	
+0812C                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
+0812C                           	MemCopy2 #<coll_addr,#>coll_addr,temp0,temp1
+0812C                           	COLL_PointInBitmap8 xpos,ypos,tlx,tly
+0812C                           	rol temp3
+0812C                           	COLL_PointInBitmap8 xpos,ypos,trx,try
+0812C                           	rol temp3
+0812C                           	COLL_PointInBitmap8 xpos,ypos,blx,bly
+0812C                           	rol temp3
+0812C                           	COLL_PointInBitmap8 xpos,ypos,brx,bry
+0812C                           	rol temp3
+0812C                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
+0812C                           	lda temp3
+0812C                           .endm
+0812C                           
+0812C                           ;; SUB-RUTINAS
+0812C                           .base ASM_PROGRAM
+0812C                           ;	Colisión simple X/Y.	
+0812C                           ;	Ejemplo con el eje X: (x1+w1 > x2) && (x2+w2 > x1)
+0812C                           ;	Observar que se puede usar la misma función para el eje Y.
+0812C                           ;	por lo tanto, para obtener la colisión de un rectángulo/cuadrado,
+0812C                           ;	basta con llamar la misma sub-rutina una vez para el eje X, y otra para el eje Y.
+0812C                           ;	Parámetros:
+0812C                           ;		temp0: Posición X/Y del objeto 1.
+0812C                           ;		temp1: Ancho/Alto del objeto 1.
+0812C                           ;		temp2: Posición X/Y del objeto 2.
+0812C                           ;		temp3: Ancho/Alto del objeto 2.
+0812C                           ;	Devuelve:
+0812C                           ;		A: 0 si no hubo colisión, 1 si hubo colisión
+0812C                           COLL_rectAxis:
+0812C                           	x1 = temp0
+0812C                           	w1 = temp1
+0812C                           	x2 = temp2
+0812C                           	w2 = temp3
+0812C                           	
+0812C A5 00                     	lda x1			; Carga la posición X/Y del obj #1
+0812E 18                        	clc				;
+0812F 65 01                     	adc w1			; Le suma su ancho/alto
+08131 C5 02                     	cmp x2			; Si es más grande que la posición X/Y:
+08133 30 0C                     	bmi @no_coll	; Sigue ejecutando. Si no, 
+08135 A5 02                     	lda x2			; 
+08137 18                        	clc				;
+08138 65 03                     	adc w2			; *repite lo mismo de arriba con el objeto #2
+0813A C5 00                     	cmp x1			;
+0813C 30 03                     	bmi @no_coll	; En caso de haber colisión, devuelve 1 en A
+0813E A9 01                     	lda #1			; Devuelve 1 en A
+08140 60                        	rts			; Volver de sub-rutina
+08141                           @no_coll:
+08141 A9 00                     	lda #0			; Devuelve 0 en A.
+08143 60                        	rts				; Volver de sub-rutina
+08144                           
+08144                           ; ; Obtiene en A la posición en un eje de un tile(8,16,32,64)	(especificar addressing mode para TARGET_POS)
+08144                           ; COLL_GetTilePosAxis
+08144                           	; clc
+08144                           	; lda pos_addr
+08144                           	; adc #offset
+08144                           	; lsr
+08144                           	; lsr
+08144                           	; lsr
+08144                           	
+08144                           	; rts				; Volver de sub-rutina
+08144                           
+08144                           
+08144                           ; Consulta si un tile tiene colisión partir de una coordenada de tile X y Y. (Tiles de 8x8 píxeles)
+08144                           ; Nota:
+08144                           ; 	Ésta sería la fórmula para obtener el byte: Y*4 + X/8
+08144                           ;	y ésta fórmula es para obtener la posición del bit: X%8
+08144                           ; Parámetros:
+08144                           ;	X: Posición X del Tile (0-31)
+08144                           ;	Y: Posición Y del Tile (0-29)
+08144                           ;	temp0: ubicación del mapa de bits de colisión (byte bajo)
+08144                           ;	temp1: ubicación del mapa de bits de colisión (byte alto)
+08144                           ; Ocupa:
+08144                           ;	Reg A
+08144                           ;	temp2: Registro temporal
+08144                           ; Devuelve:
+08144                           ;	Carry Flag Set: hay colisión
+08144                           ;	Carry Flag Clear: no hay colisión
+08144                           COLL_TileBitmap8:
+08144                           	coll_bitmap = temp0
+08144                           	;convierte las coordenadas de tile en ubicación del byte a chequear del mapa de colisiones
+08144 98                        	tya			;
+08145 0A                        	asl			; A = Y*4
+08146 0A                        	asl			;
+08147 85 02                     	sta temp2	; temp2 = A; Liberamos Y
+08149 8A                        	txa			;
+0814A 4A                        	lsr			; A = X/8
+0814B 4A                        	lsr			;
+0814C 4A                        	lsr			;
+0814D 18                        	clc			;
+0814E 65 02                     	adc temp2	; A += temp2
+08150 A8                        	tay			; Y = A;	Usaremos Y como puntero del byte.
+08151                           	;ya tenemos la ubicación del byte, ahora sólo nos queda obtener la posición del bit
+08151 8A                        	txa			;
+08152 29 07                     	and #7		; X %= 8;	Usaremos X como puntero del bit.
+08154 AA                        	tax			;
+08155 E8                        	inx			;	Incrementa X para que quede un rango de 1 - 8 (necesario para lo que se viene)
+08156                           	;ahora sólo queda buscar el byte determinado por Y comenzando desde la posición en coll_bitmap
+08156                           	;y así rotar los bits cuantas veces diga X.
+08156 B1 00                     	lda (coll_bitmap),y
+08158 2A                        -	rol			; Pasa el Carry <- 7 <- 6 <- 5 <- 4 <- 3 <- 2 <- 1 <- 0 <- Carry
+08159 CA                        	dex			; decrementar X no afecta al Carry Flag (menos mal)
+0815A D0 FC                     	bne -		; Si X != 0, repite el proceso
+0815C 60                        	rts			; Volver de sub-rutina.
+0815D                           
+0815D                           
+0815D                           	
+0815D                           ASM_PROGRAM = $
+0815D                           
+0815D                           ; Incluye dependencias del juego
+0815D                           .include "src/game.asm" 						; Lógica del juego en general
+0815D                           
+0815D                           ;	Jumper (game.asm)
+0815D                           ;	por Eliasdbr (eliasdbr@outlook.com)
+0815D                           ;	***Escrito para ASM6 v1.6***
+0815D                           
+0815D                           ; 
+0815D                           ; Lógica general del juego
+0815D                           ; (Menu, gameplay, etc.)
+0815D                           ;
+0815D                           
+0815D                           ;;	DEFINICIONES
+0815D                           GAME_STATE_GAMEPLAY 	.equ 0		; Estado del juego: Gameplay
+0815D                           GAME_STATE_PAUSE			.equ 1		; Estado del juego: Pausa
+0815D                           GAME_STATE_INTER			.equ 2		; Estado del juego: Intermission
+0815D                           GAME_STATE_MENU 			.equ 3		; Estado del juego: Menu
+0815D                           
+0815D                           ;;	VARIABLES DE PÁGINA CERO
+0815D                           .enum ASM_ZEROPAGE
+0000F                           game_state			.byte 0 		; Estado del juego.
+00010                           														; 	0: Gameplay
+00010                           														; 	1: Pausa
+00010                           														; 	2: Intermission
+00010                           														; 	3: Menu
+00010                           two_players 		.byte 0 		; Modo de juego.
+00011                           														; 	0: One player
+00011                           														; 	1: two players
+00011                           ASM_ZEROPAGE = $
+00011                           .ende
+0815D                           
+0815D                           ;;	OTRAS VARIABLES
+0815D                           
+0815D                           
+0815D                           ;;	MACROS
+0815D                           
+0815D                           
+0815D                           ;;	SUB-RUTINAS
+0815D                           .base ASM_PROGRAM
+0815D                           ; Carga el menú
+0815D                           GAME_LoadMenu:
+0815D                           	; Deshabilita las interrupciones
+0815D 78                        	sei
+0815E                           	; Desactiva los gráficos
+0815E                           	PPU_Disable 0 						; Es un macro.
+0815E A9 00                     	lda #0
+08160 8D 00 20                      sta PPUCTRL  ; disable NMI
+08163 8D 01 20                      sta PPUMASK  ; disable rendering
+08166                           	; Cambia el estado del juego a MENU
+08166                           	MemCopy #3,game_state
+08166 A9 03                     	lda #3
+08168 85 0F                     	sta game_state
+0816A                           	; Carga el background del menú
+0816A A2 00                     	ldx #<BG_MenuScreen 			; Byte bajo
+0816C A0 8A                     	ldy #>BG_MenuScreen 			; Byte alto
+0816E A9 00                     	lda #0										; Nametable 0
+08170 20 2E 80                  	jsr PPU_loadScreen				; Carga la pantalla
+08173                           	; Activar Vblank NMI, Sprites: $0000, Fondo: $1000
+08173                           	ctrl_flags = PPUCTRL_NMI_ENABLE | PPUCTRL_BG_PATTERN
+08173                           	; Muestra los sprites y el fondo
+08173                           	mask_flags = PPUMASK_SHOW_SPR | PPUMASK_SHOW_BG
+08173                           	; Reactiva los gráficos
+08173                           	PPU_Enable ctrl_flags,mask_flags		;es un macro.
+08173 A9 90                     	lda #ctrl_flags
+08175 8D 00 20                  	sta PPUCTRL
+08178 A9 18                     	lda #mask_flags
+0817A 8D 01 20                  	sta PPUMASK
+0817D                           	; Vuelve a aceptar interrupciones
+0817D 58                        	cli
+0817E                           	; Termina la sub-rutina
+0817E 60                        	rts
+0817F                           
+0817F                           ; Carga un nivel (bg solamente)
+0817F                           GAME_LoadLevel:
+0817F                           	; Deshabilita las interrupciones
+0817F 78                        	sei
+08180                           	; Desactiva los gráficos
+08180                           	PPU_Disable 0 						; Es un macro.
+08180 A9 00                     	lda #0
+08182 8D 00 20                      sta PPUCTRL  ; disable NMI
+08185 8D 01 20                      sta PPUMASK  ; disable rendering
+08188                           	; Cambia el estado del juego a MENU
+08188                           	MemCopy #0,game_state
+08188 A9 00                     	lda #0
+0818A 85 0F                     	sta game_state
+0818C                           	; Carga el background del menú
+0818C A2 00                     	ldx #<bg 			; Byte bajo
+0818E A0 86                     	ldy #>bg 			; Byte alto
+08190 A9 00                     	lda #0										; Nametable 0
+08192 20 2E 80                  	jsr PPU_loadScreen				; Carga la pantalla
+08195                           	; Activar Vblank NMI, Sprites: $0000, Fondo: $1000
+08195                           	ctrl_flags = PPUCTRL_NMI_ENABLE | PPUCTRL_BG_PATTERN
+08195                           	; Muestra los sprites y el fondo
+08195                           	mask_flags = PPUMASK_SHOW_SPR | PPUMASK_SHOW_BG
+08195                           	; Reactiva los gráficos
+08195                           	PPU_Enable ctrl_flags,mask_flags		;es un macro.
+08195 A9 90                     	lda #ctrl_flags
+08197 8D 00 20                  	sta PPUCTRL
+0819A A9 18                     	lda #mask_flags
+0819C 8D 01 20                  	sta PPUMASK
+0819F                           	; Vuelve a aceptar interrupciones
+0819F 58                        	cli
+081A0                           	; Termina la sub-rutina
+081A0 60                        	rts
+081A1                           
+081A1                           ASM_PROGRAM = $
+081A1                           
+081A1                           .include "src/player.asm" 					; Lógica del jugador
+081A1                           ;
+081A1                           ; Jumper (player.asm)
+081A1                           ; por Eliasdbr (eliasdbr@outlook.com)
+081A1                           ; ***Escrito para ASM6 v1.6***
+081A1                           ;  
+081A1                           ; Player logic
+081A1                           
+081A1                           ; CONSTANTES
+081A1                           PLAYER_SPEED		.equ 2	;velocidad de movimiento (en píxeles/frame)
+081A1                           PLAYER_ACCEL		.equ 32 ;aceleración (en sub-píxeles/frame) (es decir: 0.25)
+081A1                           PLAYER_TVEL 		.equ 4	;velocidad máxima de caída (en píxeles/frame)
+081A1                           PLAYER_JUMPSPD	.equ -3 ;velocidad de salto (en píxeles)
+081A1                           PLAYER_WJUMPSPD .equ 3	;velocidad de walljump (en píxeles)
+081A1                           PLAYER_WJUMPCD	.equ 10 ;cooldown de walljump (en frames)
+081A1                           PLAYER_GRAVITY	.equ 32 ;aceleración de gravedad (en sub-píxeles/frame) (es decir: 0.125)
+081A1                           PLAYER_MAXJUMPS .equ 1	;saltos máximos (en el aire)
+081A1                           PLAYER_1_SPR = OAM_PAGE + 1*4 ; Sprite 1
+081A1                           PLAYER_2_SPR = OAM_PAGE + 2*4 ; Sprite 2
+081A1                           
+081A1                           ; Variables de uso intensivo	(desde $0000 a $00FF)
+081A1                           .enum ASM_ZEROPAGE
+00011                           
+00011                           ; para llevar la cuenta de cuántos bytes ocupan
+00011                           ; los datos de un jugador, creamos una constante.
+00011                           
+00011                           ply_data_start = $				; '$' representa la dirección actual 
+00011                           													; en la que se está ensamblando
+00011                           
+00011                           player_jumps	.byte 0 		; 0x00 -.
+00012                           player_x			.byte 0 		; 0x01  |
+00013                           player_xsub 	.byte 0 		; 0x02  |
+00014                           player_y			.byte 0 		; 0x03  |
+00015                           player_ysub 	.byte 0 		; 0x04   > Player 1 position and movement
+00016                           player_xv 		.byte 0 		; 0x05  |
+00017                           player_xvsub	.byte 0 		; 0x06  |
+00018                           player_yv 		.byte 0 		; 0x07  |
+00019                           player_yvsub	.byte 0 		; 0x08  |
+0001A                           player_ground .byte 0 		; 0x09  |
+0001B                           player_wall 	.byte 0 		; 0x0A  | 
+0001C                           player_wjcd 	.byte 0 		; 0x0B -' ; Wall-jump cooldown
+0001D                           
+0001D                           PLY_DATA_OFFSET = $ - ply_data_start
+0001D                           
+0001D                           player2_jumps .byte 0 		
+0001E                           player2_x 		.byte 0 		
+0001F                           player2_xsub  .byte 0 		
+00020                           player2_y 		.byte 0 		
+00021                           player2_ysub	.byte 0 		
+00022                           player2_xv		.byte 0 		
+00023                           player2_xvsub .byte 0 		
+00024                           player2_yv		.byte 0 		
+00025                           player2_yvsub .byte 0 		
+00026                           player2_ground .byte 0		
+00027                           player2_wall	.byte 0 		
+00028                           player2_wjcd 	.byte 0 		; Wall Jump Cooldown
+00029                           
+00029                           ; (20 bytes)
+00029                           
+00029                           ASM_ZEROPAGE = $
+00029                           .ende
+081A1                           ; Variables normales			(desde $0300 a $0800)
+081A1                           ; Nada aún
+081A1                           
+081A1                           ; --- MACROS ---
+081A1                           ; Player Physics
+081A1                           .macro PLY_PhysicsUpdate player_data_offset
+081A1                           	; Mueve al jugador horizontalmente dependiendo del input
+081A1                           	; Si acaba de hacer un Wall Jump, no acepta input por unos frames
+081A1                           	ldx #player_data_offset 	; Jugador 1
+081A1                           	lda player_wjcd,x 				;
+081A1                           	bne + 										;
+081A1                           		jsr PLY_JoyAccelerateAxis
+081A1                           	+
+081A1                           	ldx #0	; Jugador 1
+081A1                           	MOVE_ApplyVelocityAxisSub player_x,player_xsub,player_xv,player_xvsub
+081A1                           	
+081A1                           	;Que no se pase del extremo izquierdo
+081A1                           	ldx #player_data_offset 	; Jugador 1
+081A1                           	lda player_x,x
+081A1                           	cmp #5
+081A1                           	bmi + 				; si player_x está entre 5 y 7:
+081A1                           	cmp #7
+081A1                           	bpl +
+081A1                           		lda #8			; pone al player en la posición 8 en X
+081A1                           		sta player_x,x
+081A1                           	+
+081A1                           
+081A1                           	;Chequea colisión con mapa de tiles. Eje X
+081A1                           	ldx #player_data_offset 		; Jugador 1
+081A1                           	lda #0						; Resetea las flags de si está tocando las paredes
+081A1                           	sta player_wall,x 	;
+081A1                           	jsr PLY_CheckWallsX
+081A1                           
+081A1                           	;Maneja la gravedad y el salto del jugador
+081A1                           	ldx #player_data_offset 		; Jugador 1
+081A1                           	jsr PLY_JumpFall	;
+081A1                           	
+081A1                           	; Chequea colisión con mapa de tiles. Eje Y
+081A1                           	ldx #player_data_offset						; Jugador 1
+081A1                           	jsr PLY_CheckWallsY
+081A1                           .endm
+081A1                           
+081A1                           ; --- SUB-RUTINAS ---
+081A1                           .base ASM_PROGRAM
+081A1                           
+081A1                           ; Player Spawn
+081A1                           ; Inicializa al jugador
+081A1                           ; Parámetros:
+081A1                           ; 	X: 0: Jugador 1
+081A1                           ; 		 9: Jugador 2
+081A1                           PLY_Spawn:
+081A1                           	; Resetea las velocidades
+081A1 A9 00                     	lda #0
+081A3 95 18                     	sta player_yv,x
+081A5 95 15                     	sta player_ysub,x
+081A7 95 19                     	sta player_yvsub,x
+081A9 95 16                     	sta player_xv,x
+081AB 95 13                     	sta player_xsub,x
+081AD 95 17                     	sta player_xvsub,x
+081AF                           	; Resetea el cooldown del walljump
+081AF 95 1C                     	sta player_wjcd,x
+081B1                           	; Punto de entrada del nivel (proximamente será reemplazado por la info del nivel)
+081B1 A9 40                     	lda #$40
+081B3 95 12                     	sta player_x,x
+081B5 A9 80                     	lda #$80
+081B7 95 14                     	sta player_y,x
+081B9                           	; Resetea los saltos
+081B9 A9 01                     	lda #1
+081BB 95 11                     	sta player_jumps,x
+081BD 60                        	rts 	; Volver de Sub-Rutina
+081BE                           
+081BE                           ; Aceleración horizontal dependiendo del input
+081BE                           ; Parámetros:
+081BE                           ; 	X: Offset de datos del jugador (0 o PLY_DATA_OFFSET)
+081BE                           PLY_JoyAccelerateAxis:
+081BE                           	; Mira qué jugador está por procesar en el registro X
+081BE 8A                        	txa
+081BF D0 0C                     	bne + 							; Si es el jugador 2, saltea al otro joypad
+081C1                           		IO_CheckButton 1,JP_LEFT,0
+081C1 A5 0B                     	lda joypad1 + (1 - 1)*2
+081C3 29 02                     	and #JP_LEFT
+081C5 F0 00                     	beq @end
+081C7                           	IF 0
+081C7                           		eor joypad1_prev + (1 - 1)*2
+081C7                           		and #JP_LEFT
+081C7                           	ENDIF
+081C7                           	@end:
+081C7 C9 00                     	cmp #0
+081C9                           	; Regresa el estado de la flag "Zero"
+081C9                           	; También deja el estado del botón en A.
+081C9                           	; (A == 0: Falso -- A != 0: Verdadero)
+081C9 A8                        		tay 							; Almacena temporalmente el resultado.
+081CA 4C D6 81                  		jmp ++						; Saltea el joypad 2
+081CD                           	+
+081CD                           		IO_CheckButton 2,JP_LEFT,0
+081CD A5 0D                     	lda joypad1 + (2 - 1)*2
+081CF 29 02                     	and #JP_LEFT
+081D1 F0 00                     	beq @end
+081D3                           	IF 0
+081D3                           		eor joypad1_prev + (2 - 1)*2
+081D3                           		and #JP_LEFT
+081D3                           	ENDIF
+081D3                           	@end:
+081D3 C9 00                     	cmp #0
+081D5                           	; Regresa el estado de la flag "Zero"
+081D5                           	; También deja el estado del botón en A.
+081D5                           	; (A == 0: Falso -- A != 0: Verdadero)
+081D5 A8                        		tay 							; Almacena temporalmente el resultado.
+081D6                           	++
+081D6 98                        	tya 								; Recupera el estado del botón presionado (Libera Y)
+081D7 F0 32                     	beq ++							; Si el botón < está siendo presionado:
+081D9                           		; Acelera hacia la izquierda.
+081D9                           		; recibe por el reg X la dirección del jugaor
+081D9                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32
+081D9 18                        	clc 						;
+081DA B5 17                     	lda player_xvsub,x 	;
+081DC 69 E0                     	adc #-32 		;
+081DE 95 17                     	sta player_xvsub,x 	;
+081E0 B5 16                     	lda player_xv,x 			;
+081E2 69 FF                     	adc #-1 				;
+081E4 95 16                     	sta player_xv,x 			;
+081E6                           		; Si estaba yendo a la derecha, frena más rápido.
+081E6 B5 16                     		lda player_xv,x
+081E8 30 0D                     		bmi +
+081EA                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32*2
+081EA 18                        	clc 						;
+081EB B5 17                     	lda player_xvsub,x 	;
+081ED 69 C0                     	adc #-32*2 		;
+081EF 95 17                     	sta player_xvsub,x 	;
+081F1 B5 16                     	lda player_xv,x 			;
+081F3 69 FF                     	adc #-1 				;
+081F5 95 16                     	sta player_xv,x 			;
+081F7                           		+
+081F7 B5 16                     		lda player_xv,x 		; Chequea si superó la velocidad máxima:
+081F9 C9 FE                     		cmp #-2	;
+081FB 10 0D                     		bpl @maxv						; 
+081FD                           			; Desacelera hasta igualar la velocidad máxima
+081FD                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32*2
+081FD 18                        	clc 						;
+081FE B5 17                     	lda player_xvsub,x 	;
+08200 69 40                     	adc #32*2 		;
+08202 95 17                     	sta player_xvsub,x 	;
+08204 B5 16                     	lda player_xv,x 			;
+08206 69 00                     	adc #0 				;
+08208 95 16                     	sta player_xv,x 			;
+0820A                           			;lda #-PLAYER_SPEED 
+0820A                           			;sta player_xv,x 	; Hace clamp a la velocidad máxima
+0820A                           			;lda #0						;
+0820A                           			;sta player_xvsub,x
+0820A                           			;sta player_xsub,x
+0820A                           		@maxv: 							;
+0820A 60                        		rts 			; Fin de aceleración
+0820B                           	++
+0820B 8A                        	txa 								; Mira de nuevo qué jugador estamos procesando
+0820C D0 0C                     	bne + 							; Si es el jugador 2, saltea al otro joypad
+0820E                           		IO_CheckButton 1,JP_RIGHT,0
+0820E A5 0B                     	lda joypad1 + (1 - 1)*2
+08210 29 01                     	and #JP_RIGHT
+08212 F0 00                     	beq @end
+08214                           	IF 0
+08214                           		eor joypad1_prev + (1 - 1)*2
+08214                           		and #JP_RIGHT
+08214                           	ENDIF
+08214                           	@end:
+08214 C9 00                     	cmp #0
+08216                           	; Regresa el estado de la flag "Zero"
+08216                           	; También deja el estado del botón en A.
+08216                           	; (A == 0: Falso -- A != 0: Verdadero)
+08216 A8                        		tay 							; Almacena temporalmente el resultado.
+08217 4C 23 82                  		jmp ++						; Saltea el joypad 2
+0821A                           	+
+0821A                           		IO_CheckButton 2,JP_RIGHT,0
+0821A A5 0D                     	lda joypad1 + (2 - 1)*2
+0821C 29 01                     	and #JP_RIGHT
+0821E F0 00                     	beq @end
+08220                           	IF 0
+08220                           		eor joypad1_prev + (2 - 1)*2
+08220                           		and #JP_RIGHT
+08220                           	ENDIF
+08220                           	@end:
+08220 C9 00                     	cmp #0
+08222                           	; Regresa el estado de la flag "Zero"
+08222                           	; También deja el estado del botón en A.
+08222                           	; (A == 0: Falso -- A != 0: Verdadero)
+08222 A8                        		tay 							; Almacena temporalmente el resultado.
+08223                           	++
+08223 98                        	tya 								; Recupera el estado del botón presionado (Libera Y)
+08224 F0 32                     	beq ++							; Si el botón > está siendo presionado:
+08226                           		; Acelera hacia la derecha.
+08226                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32
+08226 18                        	clc 						;
+08227 B5 17                     	lda player_xvsub,x 	;
+08229 69 20                     	adc #32 		;
+0822B 95 17                     	sta player_xvsub,x 	;
+0822D B5 16                     	lda player_xv,x 			;
+0822F 69 00                     	adc #0 				;
+08231 95 16                     	sta player_xv,x 			;
+08233                           		; Si estaba yendo a la izquierda, frena más rápido.
+08233 B5 16                     		lda player_xv,x
+08235 10 0D                     		bpl +
+08237                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32*2
+08237 18                        	clc 						;
+08238 B5 17                     	lda player_xvsub,x 	;
+0823A 69 40                     	adc #32*2 		;
+0823C 95 17                     	sta player_xvsub,x 	;
+0823E B5 16                     	lda player_xv,x 			;
+08240 69 00                     	adc #0 				;
+08242 95 16                     	sta player_xv,x 			;
+08244                           		+
+08244 B5 16                     		lda player_xv,x 		; Chequea si superó la velocidad máxima:
+08246 C9 02                     		cmp #2 	;
+08248 30 0D                     		bmi @minv						; De ser así:
+0824A                           			; Desacelera hasta igualar la velocidad máxima
+0824A                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32*2
+0824A 18                        	clc 						;
+0824B B5 17                     	lda player_xvsub,x 	;
+0824D 69 C0                     	adc #-32*2 		;
+0824F 95 17                     	sta player_xvsub,x 	;
+08251 B5 16                     	lda player_xv,x 			;
+08253 69 FF                     	adc #-1 				;
+08255 95 16                     	sta player_xv,x 			;
+08257                           			;lda #PLAYER_SPEED ;
+08257                           			;sta player_xv,x		; Hace clamp a la velocidad máxima
+08257                           			;lda #0						;
+08257                           			;sta player_xvsub,x
+08257                           			;sta player_xsub,x
+08257                           		@minv: 							;
+08257 60                        		rts 								; Fin de la aceleración.
+08258                           	++ 
+08258                           		; - Desaceleración -
+08258 B5 16                     	lda player_xv,x			; Si ningún botón está siendo presionado:
+0825A D0 04                     	bne + 							; Y si la velocidad actual del jugador es 0:
+0825C B5 17                     		lda player_xvsub,x; Chequea si la velocidad sub-pixel es 0.
+0825E F0 1F                     		beq end_input 		; Si es cero, termina la desaceleración.
+08260                           	+ 
+08260 B5 16                     	lda player_xv,x 		; Chequea si la velocidad es negativa
+08262 30 0E                     	bmi + 							; 
+08264                           	; Si es positiva, desacelera hacia la izquierda.
+08264                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32
+08264 18                        	clc 						;
+08265 B5 17                     	lda player_xvsub,x 	;
+08267 69 E0                     	adc #-32 		;
+08269 95 17                     	sta player_xvsub,x 	;
+0826B B5 16                     	lda player_xv,x 			;
+0826D 69 FF                     	adc #-1 				;
+0826F 95 16                     	sta player_xv,x 			;
+08271 60                        		rts 							; Termina
+08272                           	+ 
+08272                           	; Si es negativa, desacelera hacia la derecha.
+08272                           	MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32
+08272 18                        	clc 						;
+08273 B5 17                     	lda player_xvsub,x 	;
+08275 69 20                     	adc #32 		;
+08277 95 17                     	sta player_xvsub,x 	;
+08279 B5 16                     	lda player_xv,x 			;
+0827B 69 00                     	adc #0 				;
+0827D 95 16                     	sta player_xv,x 			;
+0827F                           end_input: 
+0827F 60                        	rts
+08280                           	; FIN DE SUB-RUTINA
+08280                           
+08280                           ; Colisión del jugador en el eje X
+08280                           ; Recibe en el reg X qué jugador procesa
+08280                           PLY_CheckWallsX:
+08280                           	; (Macro)
+08280                           	; Chequea la colisión en sus anchas
+08280                           	; -1,0 --- 8,0
+08280                           	;   |       |
+08280                           	;   |       |
+08280                           	; -1,7 --- 8,7
+08280                           	; 
+08280                           	COLL_SquareInTile8 player_x,player_y,coll,-1,0,8,0,-1,7,8,7
+08280                           	; temp3 = coll_flags
+08280                           	
+08280                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
+08280 A9 00                     	lda #0
+08282 85 03                     	sta temp3
+08284                           	MemCopy2 #<coll,#>coll,temp0,temp1
+08284 A2 40                     	ldx #<coll
+08286 A0 8E                     	ldy #>coll
+08288 86 00                     	stx temp0
+0828A 84 01                     	sty temp1
+0828C                           	COLL_PointInBitmap8 player_x,player_y,-1,0
+0828C 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+0828E                           	;posición x
+0828E B5 12                     	lda player_x,x
+08290 18                        	clc
+08291 69 FF                     	adc #-1
+08293 4A                        	lsr
+08294 4A                        	lsr
+08295 4A                        	lsr
+08296 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+08298                           	;posición y
+08298 B5 14                     	lda player_y,x
+0829A 18                        	clc
+0829B 69 00                     	adc #0
+0829D 4A                        	lsr
+0829E 4A                        	lsr
+0829F 4A                        	lsr
+082A0 A8                        	tay					; posicion tile Y
+082A1 A6 07                     	ldx temp7		; posicion tile X
+082A3 20 44 81                  	jsr COLL_TileBitmap8
+082A6 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+082A8 26 03                     	rol temp3
+082AA                           	COLL_PointInBitmap8 player_x,player_y,8,0
+082AA 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+082AC                           	;posición x
+082AC B5 12                     	lda player_x,x
+082AE 18                        	clc
+082AF 69 08                     	adc #8
+082B1 4A                        	lsr
+082B2 4A                        	lsr
+082B3 4A                        	lsr
+082B4 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+082B6                           	;posición y
+082B6 B5 14                     	lda player_y,x
+082B8 18                        	clc
+082B9 69 00                     	adc #0
+082BB 4A                        	lsr
+082BC 4A                        	lsr
+082BD 4A                        	lsr
+082BE A8                        	tay					; posicion tile Y
+082BF A6 07                     	ldx temp7		; posicion tile X
+082C1 20 44 81                  	jsr COLL_TileBitmap8
+082C4 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+082C6 26 03                     	rol temp3
+082C8                           	COLL_PointInBitmap8 player_x,player_y,-1,7
+082C8 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+082CA                           	;posición x
+082CA B5 12                     	lda player_x,x
+082CC 18                        	clc
+082CD 69 FF                     	adc #-1
+082CF 4A                        	lsr
+082D0 4A                        	lsr
+082D1 4A                        	lsr
+082D2 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+082D4                           	;posición y
+082D4 B5 14                     	lda player_y,x
+082D6 18                        	clc
+082D7 69 07                     	adc #7
+082D9 4A                        	lsr
+082DA 4A                        	lsr
+082DB 4A                        	lsr
+082DC A8                        	tay					; posicion tile Y
+082DD A6 07                     	ldx temp7		; posicion tile X
+082DF 20 44 81                  	jsr COLL_TileBitmap8
+082E2 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+082E4 26 03                     	rol temp3
+082E6                           	COLL_PointInBitmap8 player_x,player_y,8,7
+082E6 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+082E8                           	;posición x
+082E8 B5 12                     	lda player_x,x
+082EA 18                        	clc
+082EB 69 08                     	adc #8
+082ED 4A                        	lsr
+082EE 4A                        	lsr
+082EF 4A                        	lsr
+082F0 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+082F2                           	;posición y
+082F2 B5 14                     	lda player_y,x
+082F4 18                        	clc
+082F5 69 07                     	adc #7
+082F7 4A                        	lsr
+082F8 4A                        	lsr
+082F9 4A                        	lsr
+082FA A8                        	tay					; posicion tile Y
+082FB A6 07                     	ldx temp7		; posicion tile X
+082FD 20 44 81                  	jsr COLL_TileBitmap8
+08300 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+08302 26 03                     	rol temp3
+08304                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
+08304 A5 03                     	lda temp3
+08306 A2 00                     	ldx #0 ; TEST Jugador 1
+08308 95 1B                     	sta player_wall,x ; Guarda la info de colisión
+0830A A8                        	tay 							; Copia las colisiones al reg Y
+0830B 29 0A                     	and #%00001010		; Chequea las dos esquinas de la izquierda
+0830D F0 15                     	beq + 						; si no hay colisión, chequea el siguiente lado
+0830F B5 12                     		lda player_x,x	; Pero si hay colision:
+08311 18                        		clc 						;
+08312 69 07                     		adc #7					; Acomoda al jugador en el tile de la derecha.
+08314 29 F8                     		and #%11111000	;
+08316 95 12                     		sta player_x,x	;
+08318 B5 16                     		lda player_xv,x ; Si se estaba moviendo...
+0831A F0 08                     		beq + 					;
+0831C A9 00                     			lda #0					; resetea la velocidad horizontal.
+0831E 95 16                     			sta player_xv,x 
+08320 95 17                     			sta player_xvsub,x
+08322 95 13                     			sta player_xsub,x
+08324                           	+ 
+08324 98                        	tya 							; Recupera las colisiones
+08325 29 05                     	and #%00000101		; Chequea las dos esquinas del lado de la derecha
+08327 F0 12                     	beq + 						; si no hay colisión, termina, no pasa más nada
+08329 B5 12                     		lda player_x,x	; Pero si hay colision:
+0832B 29 F8                     		and #%11111000	; Acomoda el jugador en el tile de la izquierda
+0832D 95 12                     		sta player_x,x	;
+0832F B5 16                     		lda player_xv,x ; Si se estaba moviendo...
+08331 F0 08                     		beq + 					;
+08333 A9 00                     			lda #0					; resetea la velocidad horizontal.
+08335 95 16                     			sta player_xv,x 
+08337 95 17                     			sta player_xvsub,x
+08339 95 13                     			sta player_xsub,x
+0833B                           	+
+0833B 60                        	rts
+0833C                           
+0833C                           ; Chequea colisión con las paredes en el eje Y
+0833C                           PLY_CheckWallsY:
+0833C                           	; (Macro)
+0833C                           	; Chequea la colisión en sus altas
+0833C                           	; 0,0 --- 7,0
+0833C                           	;  |       |
+0833C                           	;  |       |
+0833C                           	; 0,8 --- 7,8
+0833C                           	; 
+0833C                           	COLL_SquareInTile8 player_x,player_y,coll,0,0,7,0,0,8,7,8
+0833C                           	; temp3 = coll_flags
+0833C                           	
+0833C                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
+0833C A9 00                     	lda #0
+0833E 85 03                     	sta temp3
+08340                           	MemCopy2 #<coll,#>coll,temp0,temp1
+08340 A2 40                     	ldx #<coll
+08342 A0 8E                     	ldy #>coll
+08344 86 00                     	stx temp0
+08346 84 01                     	sty temp1
+08348                           	COLL_PointInBitmap8 player_x,player_y,0,0
+08348 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+0834A                           	;posición x
+0834A B5 12                     	lda player_x,x
+0834C 18                        	clc
+0834D 69 00                     	adc #0
+0834F 4A                        	lsr
+08350 4A                        	lsr
+08351 4A                        	lsr
+08352 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+08354                           	;posición y
+08354 B5 14                     	lda player_y,x
+08356 18                        	clc
+08357 69 00                     	adc #0
+08359 4A                        	lsr
+0835A 4A                        	lsr
+0835B 4A                        	lsr
+0835C A8                        	tay					; posicion tile Y
+0835D A6 07                     	ldx temp7		; posicion tile X
+0835F 20 44 81                  	jsr COLL_TileBitmap8
+08362 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+08364 26 03                     	rol temp3
+08366                           	COLL_PointInBitmap8 player_x,player_y,7,0
+08366 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+08368                           	;posición x
+08368 B5 12                     	lda player_x,x
+0836A 18                        	clc
+0836B 69 07                     	adc #7
+0836D 4A                        	lsr
+0836E 4A                        	lsr
+0836F 4A                        	lsr
+08370 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+08372                           	;posición y
+08372 B5 14                     	lda player_y,x
+08374 18                        	clc
+08375 69 00                     	adc #0
+08377 4A                        	lsr
+08378 4A                        	lsr
+08379 4A                        	lsr
+0837A A8                        	tay					; posicion tile Y
+0837B A6 07                     	ldx temp7		; posicion tile X
+0837D 20 44 81                  	jsr COLL_TileBitmap8
+08380 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+08382 26 03                     	rol temp3
+08384                           	COLL_PointInBitmap8 player_x,player_y,0,8
+08384 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+08386                           	;posición x
+08386 B5 12                     	lda player_x,x
+08388 18                        	clc
+08389 69 00                     	adc #0
+0838B 4A                        	lsr
+0838C 4A                        	lsr
+0838D 4A                        	lsr
+0838E 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+08390                           	;posición y
+08390 B5 14                     	lda player_y,x
+08392 18                        	clc
+08393 69 08                     	adc #8
+08395 4A                        	lsr
+08396 4A                        	lsr
+08397 4A                        	lsr
+08398 A8                        	tay					; posicion tile Y
+08399 A6 07                     	ldx temp7		; posicion tile X
+0839B 20 44 81                  	jsr COLL_TileBitmap8
+0839E A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+083A0 26 03                     	rol temp3
+083A2                           	COLL_PointInBitmap8 player_x,player_y,7,8
+083A2 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+083A4                           	;posición x
+083A4 B5 12                     	lda player_x,x
+083A6 18                        	clc
+083A7 69 07                     	adc #7
+083A9 4A                        	lsr
+083AA 4A                        	lsr
+083AB 4A                        	lsr
+083AC 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+083AE                           	;posición y
+083AE B5 14                     	lda player_y,x
+083B0 18                        	clc
+083B1 69 08                     	adc #8
+083B3 4A                        	lsr
+083B4 4A                        	lsr
+083B5 4A                        	lsr
+083B6 A8                        	tay					; posicion tile Y
+083B7 A6 07                     	ldx temp7		; posicion tile X
+083B9 20 44 81                  	jsr COLL_TileBitmap8
+083BC A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+083BE 26 03                     	rol temp3
+083C0                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
+083C0 A5 03                     	lda temp3
+083C2 A2 00                     	ldx #0	; Jugador 1
+083C4 A8                        	tay 											; Copia las colisiones
+083C5 29 0C                     	and #%00001100						; Chequea las dos esquinas de arriba
+083C7 F0 11                     	beq + 										; si no hay colisión, chequea el siguiente lado
+083C9 B5 14                     		lda player_y,x					; Pero si hay colision:
+083CB 18                        		clc 										;
+083CC 69 07                     		adc #7									; Acomoda al jugador en el tile de abajo.
+083CE 29 F8                     		and #%11111000					;
+083D0 95 14                     		sta player_y,x					;
+083D2 A9 00                     		lda #0									; Si está saltando, lo detiene
+083D4 95 18                     		sta player_yv,x 				;
+083D6 95 19                     		sta player_yvsub,x			;
+083D8 95 15                     		sta player_ysub,x 			;
+083DA                           	+
+083DA 98                        	tya 											; Recupera las colisiones
+083DB 29 03                     	and #%00000011						; Chequea las dos esquinas de abajo
+083DD F0 19                     	beq + 										; si no hay colisión, está en el aire
+083DF                           		; A veces no entra acá siendo que si está tocando el suelo...
+083DF B5 14                     		lda player_y,x					; Pero si hay colision:
+083E1 29 F8                     		and #%11111000					; Acomoda el jugador en el tile de arriba
+083E3 95 14                     		sta player_y,x					;
+083E5 A9 00                     		lda #0									; Si está cayendo, lo detiene.
+083E7 95 18                     		sta player_yv,x 				; Ha tocado el suelo
+083E9 95 19                     		sta player_yvsub,x			;
+083EB 95 15                     		sta player_ysub,x 			;
+083ED A9 01                     		lda #1		; Resetea los saltos disponibles.
+083EF 95 11                     		sta player_jumps,x			; 
+083F1 A9 01                     		lda #1									; Indica que está tocando el suelo.
+083F3 95 1A                     		sta player_ground,x 		;
+083F5 4C FC 83                  		jmp ++									; termina
+083F8                           	+ 												; Si no toca el suelo, está en el aire
+083F8 A9 00                     		lda #0									;
+083FA 95 1A                     		sta player_ground,x 		;
+083FC                           	++
+083FC 60                        	rts
+083FD                           
+083FD                           ; Salto y gravedad del jugador
+083FD                           PLY_JumpFall:
+083FD                           	; Wall Jump
+083FD B5 1C                     	lda player_wjcd,x 	; Decrementa el timer
+083FF F0 02                     	beq + 							; del cooldown del walljump
+08401 D6 1C                     		dec player_wjcd,x ; hasta llegar a 0.
+08403                           	+
+08403                           	; Salto de Ogmo
+08403                           	IO_CheckButton 1,JP_A,1	; Si acaba de presionar el botón A:
+08403 A5 0B                     	lda joypad1 + (1 - 1)*2
+08405 29 80                     	and #JP_A
+08407 F0 04                     	beq @end
+08409                           	IF 1
+08409 45 0C                     		eor joypad1_prev + (1 - 1)*2
+0840B 29 80                     		and #JP_A
+0840D                           	ENDIF
+0840D                           	@end:
+0840D C9 00                     	cmp #0
+0840F                           	; Regresa el estado de la flag "Zero"
+0840F                           	; También deja el estado del botón en A.
+0840F                           	; (A == 0: Falso -- A != 0: Verdadero)
+0840F F0 64                     	beq +++ 										;
+08411 B5 1A                     	lda player_ground,x 				; Si no está tocando el suelo:
+08413 D0 4E                     	bne ++											;
+08415                           		; Chequea si está presionando <
+08415                           		IO_CheckButton 1,JP_LEFT,0
+08415 A5 0B                     	lda joypad1 + (1 - 1)*2
+08417 29 02                     	and #JP_LEFT
+08419 F0 00                     	beq @end
+0841B                           	IF 0
+0841B                           		eor joypad1_prev + (1 - 1)*2
+0841B                           		and #JP_LEFT
+0841B                           	ENDIF
+0841B                           	@end:
+0841B C9 00                     	cmp #0
+0841D                           	; Regresa el estado de la flag "Zero"
+0841D                           	; También deja el estado del botón en A.
+0841D                           	; (A == 0: Falso -- A != 0: Verdadero)
+0841D F0 1D                     		beq +
+0841F B5 1B                     		lda player_wall,x 					; y si está tocando la pared izquierda
+08421 29 0A                     		and #%00001010							;
+08423 F0 17                     		beq + 											;
+08425 A9 03                     			lda #3			; Hace un walljump hacia la derecha
+08427 95 16                     			sta player_xv,x 					; 
+08429 A9 FD                     			lda #-3 			; Salta un poco hacia arriba también
+0842B 95 18                     			sta player_yv,x 					;
+0842D A9 80                     			lda #-128									; -2.5
+0842F 95 19                     			sta player_yvsub,x				;
+08431 A9 00                     			lda #0										; (redondea las velocidades)
+08433 95 17                     			sta player_xvsub,x				;
+08435 A9 0A                     			lda #10 			; resetea el contador de cooldown
+08437 95 1C                     			sta player_wjcd,x 				; del walljump
+08439 4C 75 84                  			jmp +++										; Termina
+0843C                           		+
+0843C                           		; Chequea si está presionando >
+0843C                           		IO_CheckButton 1,JP_RIGHT,0
+0843C A5 0B                     	lda joypad1 + (1 - 1)*2
+0843E 29 01                     	and #JP_RIGHT
+08440 F0 00                     	beq @end
+08442                           	IF 0
+08442                           		eor joypad1_prev + (1 - 1)*2
+08442                           		and #JP_RIGHT
+08442                           	ENDIF
+08442                           	@end:
+08442 C9 00                     	cmp #0
+08444                           	; Regresa el estado de la flag "Zero"
+08444                           	; También deja el estado del botón en A.
+08444                           	; (A == 0: Falso -- A != 0: Verdadero)
+08444 F0 1D                     		beq ++
+08446 B5 1B                     		lda player_wall,x 					; y si está tocando la pared derecha
+08448 29 05                     		and #%00000101							;
+0844A F0 17                     		beq ++											;
+0844C A9 FD                     			lda #-3 		; Hace un walljump hacia la izquierda
+0844E 95 16                     			sta player_xv,x 					; 
+08450 A9 FD                     			lda #-3 			; Salta un poco hacia arriba también
+08452 95 18                     			sta player_yv,x 					;
+08454 A9 80                     			lda #-128									; -2.5
+08456 95 19                     			sta player_yvsub,x				;
+08458 A9 00                     			lda #0										; (redondea las velocidades)
+0845A 95 17                     			sta player_xvsub,x					;
+0845C A9 0A                     			lda #10 			; resetea el contador de cooldown
+0845E 95 1C                     			sta player_wjcd,x 				; del walljump
+08460 4C 75 84                  			jmp +++ 									; Termina
+08463                           	++
+08463 B5 11                     	lda player_jumps,x					; Y si quedan saltos disponibles:
+08465 F0 0E                     	beq +++ 										;
+08467 A9 FD                     		lda #-3				; Salta
+08469 95 18                     		sta player_yv,x 					;
+0846B A9 00                     		lda #0										; (pone la velocidad vertical a 4.0)
+0846D 95 19                     		sta player_yvsub,x				;
+0846F B5 1A                     		lda player_ground,x 			; Si no está tocando el suelo:
+08471 D0 02                     		bne +++ 									;
+08473 D6 11                     			dec player_jumps,x			; quita un salto disponible.
+08475                           	+++
+08475                           	;Gravedad
+08475 B5 18                     	lda player_yv,x 						; Si la velocidad vertical actual
+08477 C9 04                     	cmp #4						; no supera la velocidad terminal:
+08479 10 14                     	bpl + 											;
+0847B B5 1A                     	lda player_ground,x 				; Si no está tocando el suelo:
+0847D D0 10                     	bne + 											;
+0847F                           		; Agrega gravedad.
+0847F                           		MOVE_ApplyVelocityAxisSub player_yv,player_yvsub,#0,#32
+0847F 18                        	clc 						;
+08480 B5 19                     	lda player_yvsub,x 	;
+08482 69 20                     	adc #32 		;
+08484 95 19                     	sta player_yvsub,x 	;
+08486 B5 18                     	lda player_yv,x 			;
+08488 69 00                     	adc #0 				;
+0848A 95 18                     	sta player_yv,x 			;
+0848C 4C 95 84                  		jmp ++											; pasa directamente a aplicar la velocidad
+0848F                           	+ 
+0848F A9 00                     	lda #0											; Si alcanzó la velocidad terminal:
+08491 95 19                     	sta player_yvsub,x					; Resetea la velocidad sub-pixel.
+08493 95 15                     	sta player_ysub,x 					; Resetea la posición sub-pixel.
+08495                           	
+08495                           	++
+08495                           	; Mueve al jugador en el eje Y.
+08495                           	MOVE_ApplyVelocityAxisSub player_y,player_ysub,player_yv,player_yvsub
+08495 18                        	clc 						;
+08496 B5 15                     	lda player_ysub,x 	;
+08498 65 19                     	adc player_yvsub 		;
+0849A 95 15                     	sta player_ysub,x 	;
+0849C B5 14                     	lda player_y,x 			;
+0849E 65 18                     	adc player_yv 				;
+084A0 95 14                     	sta player_y,x 			;
+084A2 60                        	rts
+084A3                           
+084A3                           
+084A3                           ASM_PROGRAM = $
+084A3                           
+084A3                           
+084A3                           ; Constantes del Juego
+084A3                           ; ---
+084A3                           
+084A3                           ; Variables de uso intensivo	(desde $0000 a $00FF)
+084A3                           .enum ASM_ZEROPAGE
+00029                           ; (xxx bytes usados de librerías)
+00029                           ASM_ZEROPAGE = $
+00029                           .ende
+084A3                           
+084A3                           ; Variables normales			(desde $0300 a $0800)
+084A3                           ; Nada aún
+084A3                           
+084A3                           
+084A3                           .base ASM_PROGRAM	; Continuamos escribiendo programa
+084A3                           
+084A3                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084A3                           	; # - - - Arranque del Juego (luego del RESET)  - - - - #
+084A3                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084A3                           main_setup:
+084A3                           	
+084A3                           	; --- Inicializa el Juego ---
+084A3                           	
+084A3                           	; Carga el menú, establece el game_state a MENU
+084A3 20 5D 81                  	jsr GAME_LoadMenu
+084A6                           	
+084A6                           	MemCopy #0,two_players	; Modo Un jugador
+084A6 A9 00                     	lda #0
+084A8 85 10                     	sta two_players
+084AA                           	
+084AA A9 00                     	lda #0				; Resetea el scroll
+084AC 85 08                     	sta scroll_x
+084AE 85 09                     	sta scroll_y
+084B0                           	
+084B0                           	
+084B0                           	
+084B0                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084B0                           	; # - - - Loop principal del Juego	(cada frame, después del VBLANK)  - - - #
+084B0                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084B0                           main_loop:
+084B0                           	;obtiene los joypads 
+084B0                           	IO_JoyUpdate						; (Macro)
+084B0                           	; Actualiza los botones previos
+084B0 A6 0B                     	ldx joypad1
+084B2 A4 0D                     	ldy joypad2
+084B4 86 0C                     	stx joypad1_prev
+084B6 84 0E                     	sty joypad2_prev
+084B8                           	; Actualiza los botones actuales
+084B8 A9 01                     	lda #$01
+084BA 85 0B                     	sta joypad1 	;le ponemos 1 a joypad1 para indicar cuándo llega a mirar los 8 botones.
+084BC 85 0D                     	sta joypad2 	; repetir con el joystick 2
+084BE 8D 16 40                  	sta JOYPAD1 	;decirle a los controles(joysticks) #1 y #2 que miren qué botones se están apretando.
+084C1 8D 17 40                  	sta JOYPAD2 	; repetir con el joystick 2
+084C4 A9 00                     	lda #$00
+084C6 8D 16 40                  	sta JOYPAD1 	;decirle al control(joystick) #1 que guarde lo botones que miró.
+084C9 8D 17 40                  	sta JOYPAD2 	; repetir con el joystick 2
+084CC                           	; Ahora le pediremos al joystick si los botones estaban presionados o no, uno por uno.
+084CC 18                        	clc
+084CD                           	-
+084CD AD 16 40                  	lda JOYPAD1 	;preguntamos el estado del botón actual
+084D0 4A                        	lsr 					;mete el estado del botón actual en el carry flag.
+084D1 26 0B                     	rol joypad1 	;pone el bit7 en el Carry y lo que estaba en el Carry lo manda al bit0
+084D3 90 F8                     	bcc - 				;si se obtienen los 8 botones, el carry estará en 1, si no, volvemos a pedir un boton.
+084D5 18                        	clc 					;
+084D6                           	-
+084D6 AD 17 40                  	lda JOYPAD2 	; repetir con el joystick 2
+084D9 4A                        	lsr 					;
+084DA 26 0D                     	rol joypad2 	;
+084DC 90 F8                     	bcc - 				;
+084DE                           	
+084DE                           	; 
+084DE                           	; Chequea el estado del juego (game_state)
+084DE                           	; 
+084DE                           	
+084DE A5 0F                     	lda game_state
+084E0 D0 03                     	bne +
+084E2 4C F6 84                  		jmp GameplayLogic
+084E5                           	+
+084E5 C9 01                     	cmp #1
+084E7 D0 03                     	bne +
+084E9 4C 31 85                  		jmp PauseLogic
+084EC                           	+
+084EC C9 02                     	cmp #2
+084EE D0 03                     	bne +
+084F0 4C 62 85                  		jmp InterLogic
+084F3                           	+
+084F3 4C 65 85                  	jmp MenuLogic
+084F6                           
+084F6                           	; Lógica del juego
+084F6                           	;
+084F6                           	GameplayLogic:
+084F6                           		; Logica del jugador 1
+084F6                           		; 
+084F6                           		
+084F6                           		PLY_PhysicsUpdate 0 				; Físicas del jugador 1
+084F6                           	; Mueve al jugador horizontalmente dependiendo del input
+084F6                           	; Si acaba de hacer un Wall Jump, no acepta input por unos frames
+084F6 A2 00                     	ldx #0 	; Jugador 1
+084F8 B5 1C                     	lda player_wjcd,x 				;
+084FA D0 03                     	bne + 										;
+084FC 20 BE 81                  		jsr PLY_JoyAccelerateAxis
+084FF                           	+
+084FF A2 00                     	ldx #0	; Jugador 1
+08501                           	MOVE_ApplyVelocityAxisSub player_x,player_xsub,player_xv,player_xvsub
+08501 18                        	clc 						;
+08502 B5 13                     	lda player_xsub,x 	;
+08504 65 17                     	adc player_xvsub 		;
+08506 95 13                     	sta player_xsub,x 	;
+08508 B5 12                     	lda player_x,x 			;
+0850A 65 16                     	adc player_xv 				;
+0850C 95 12                     	sta player_x,x 			;
+0850E                           	
+0850E                           	;Que no se pase del extremo izquierdo
+0850E A2 00                     	ldx #0 	; Jugador 1
+08510 B5 12                     	lda player_x,x
+08512 C9 05                     	cmp #5
+08514 30 08                     	bmi + 				; si player_x está entre 5 y 7:
+08516 C9 07                     	cmp #7
+08518 10 04                     	bpl +
+0851A A9 08                     		lda #8			; pone al player en la posición 8 en X
+0851C 95 12                     		sta player_x,x
+0851E                           	+
+0851E                           
+0851E                           	;Chequea colisión con mapa de tiles. Eje X
+0851E A2 00                     	ldx #0 		; Jugador 1
+08520 A9 00                     	lda #0						; Resetea las flags de si está tocando las paredes
+08522 95 1B                     	sta player_wall,x 	;
+08524 20 80 82                  	jsr PLY_CheckWallsX
+08527                           
+08527                           	;Maneja la gravedad y el salto del jugador
+08527 A2 00                     	ldx #0 		; Jugador 1
+08529 20 FD 83                  	jsr PLY_JumpFall	;
+0852C                           	
+0852C                           	; Chequea colisión con mapa de tiles. Eje Y
+0852C A2 00                     	ldx #0						; Jugador 1
+0852E 20 3C 83                  	jsr PLY_CheckWallsY
+08531                           		
+08531                           		; No deja que se pase de la parte superior del nivel
+08531                           		;lda player_y
+08531                           		;cmp #32 						;Y=32: parte superior del nivel, parte inferior del HUD
+08531                           		;bpl + 							; si player_y es menor a 32,
+08531                           		;cmp #24 						; y mayor a 24:
+08531                           		;bmi + 							;
+08531                           		;	lda #32 					; acomoda player_y en 32.
+08531                           		;	sta player_y			;
+08531                           		;	lda #0						;resetea la velocidad vertical.
+08531                           		;	sta player_yv 		;
+08531                           		;	sta player_yvsub	;
+08531                           		;	sta player_ysub 	;
+08531                           		;+
+08531                           	
+08531                           	; Cosas que se procesan aún cuando está pausado
+08531                           	;
+08531                           	PauseLogic:
+08531                           		; Chequea si acaba de presionar el botón Start
+08531                           		IO_CheckButton 1,JP_START,1
+08531 A5 0B                     	lda joypad1 + (1 - 1)*2
+08533 29 10                     	and #JP_START
+08535 F0 04                     	beq @end
+08537                           	IF 1
+08537 45 0C                     		eor joypad1_prev + (1 - 1)*2
+08539 29 10                     		and #JP_START
+0853B                           	ENDIF
+0853B                           	@end:
+0853B C9 00                     	cmp #0
+0853D                           	; Regresa el estado de la flag "Zero"
+0853D                           	; También deja el estado del botón en A.
+0853D                           	; (A == 0: Falso -- A != 0: Verdadero)
+0853D F0 06                     		beq +
+0853F A5 0F                     			lda game_state
+08541 49 01                     			eor #1 		; Togglea el estado de pausa
+08543 85 0F                     			sta game_state
+08545                           		+
+08545                           		; antes de finalizar el frame
+08545                           		; posicion del jugador 1
+08545 A6 12                     		ldx player_x
+08547 A4 14                     		ldy player_y
+08549 88                        		dey 							; sube Y un píxel para acomodar la posición del sprite
+0854A 8E 07 02                  		stx PLAYER_1_SPR+SPRINFO_X
+0854D 8C 04 02                  		sty PLAYER_1_SPR+SPRINFO_Y
+08550                           		; posicion del jugador 2
+08550 A5 10                     		lda two_players
+08552 F0 0B                     		beq +
+08554 A6 1E                     			ldx player2_x
+08556 A4 20                     			ldy player2_y
+08558 88                        			dey 							; sube Y un píxel para acomodar la posición del sprite
+08559 8E 0B 02                  			stx PLAYER_2_SPR+SPRINFO_X
+0855C 8C 08 02                  			sty PLAYER_2_SPR+SPRINFO_Y
+0855F                           		+
+0855F 4C 84 85                  	jmp FrameEnd
+08562                           	
+08562                           	
+08562                           	; Lógica de intermission
+08562                           	;
+08562                           	InterLogic:
+08562                           	; ...
+08562 4C 84 85                  	jmp FrameEnd
+08565                           	
+08565                           	
+08565                           	; Logica del menú
+08565                           	;
+08565                           	MenuLogic:
+08565                           	IO_CheckButton 1,JP_START,1
+08565 A5 0B                     	lda joypad1 + (1 - 1)*2
+08567 29 10                     	and #JP_START
+08569 F0 04                     	beq @end
+0856B                           	IF 1
+0856B 45 0C                     		eor joypad1_prev + (1 - 1)*2
+0856D 29 10                     		and #JP_START
+0856F                           	ENDIF
+0856F                           	@end:
+0856F C9 00                     	cmp #0
+08571                           	; Regresa el estado de la flag "Zero"
+08571                           	; También deja el estado del botón en A.
+08571                           	; (A == 0: Falso -- A != 0: Verdadero)
+08571 F0 11                     	beq +
+08573                           		; lda #GAME_STATE_GAMEPLAY
+08573                           		; sta game_state 
+08573 20 7F 81                  		jsr GAME_LoadLevel
+08576                           	  ; --- Inicializa jugador/es ---
+08576                           	  ; Esto debe hacerse al iniciar un nivel
+08576                           	  ; Player 1
+08576 A2 00                     	  ldx #0	; Variables del jug 1
+08578 20 A1 81                  	  jsr PLY_Spawn
+0857B                           	  ; Player 2 (sólo si el modo 2 players está activado)
+0857B A5 10                     	  lda two_players
+0857D F0 05                     	  beq +
+0857F A2 0C                     	  	ldx #PLY_DATA_OFFSET ; Variables del jug 2
+08581 20 A1 81                  	  	jsr PLY_Spawn
+08584                           	  +
+08584                           	+
+08584                           	
+08584                           	; Final del frame
+08584                           	;
+08584                           	FrameEnd:
+08584                           	
+08584                           	; Una vez ejecutada toda la lógica durante el frame, esperamos a que la PPU se desocupe y nos
+08584                           	; interrumpa para poder actualizar los gráficos.
+08584 E6 0A                     	inc waiting_nmi
+08586                           	@wait:
+08586 A5 0A                     		lda waiting_nmi
+08588 D0 FC                     		bne @wait 			;Entramos en un Loop infinito hasta que la PPU esté lista. Entonces saltaremos a "NMI:"
+0858A                           		; Cuando finalice la rutina de VBLANK (cuando finalice "NMI:"), volveremos aquí.
+0858A 4C B0 84                  jmp main_loop 			;volveremos a procesar toda la lógica para el siguiente frame.
+0858D                           
+0858D                           
+0858D                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+0858D                           ; # - - - Sub-Rutinas del Juego (Funciones) - - - - - - #
+0858D                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+0858D                           
+0858D                           
+0858D                           
+0858D                           ; # - - - - - - - - - - - - - - - - - - - - #
+0858D                           ; # - - -     Binarios externos     - - - - #
+0858D                           ; # - - - - - - - - - - - - - - - - - - - - #
+0858D 00 00 00 00 00 00 00 00.. .align 256
+08600                           ; Información de fondo + atributos de color
+08600                           bg:
+08600 00 00 00 00 00 00 00 00.. .incbin "res\pantalla.nam"	;(tamaño: 1024 Bytes)
+08A00                           BG_MenuScreen:
+08A00 30 30 30 30 30 30 30 30.. .incbin "res\menu.nam"	; (1024 bytes)
+08E00                           
+08E00                           metatiles:
+08E00                           .include "res\metatiles.asm"	; (1024 bytes)
+08E00                           ; Lista de metatiles
+08E00                           
+08E00                           ; BLOCK Type (0 - 7)
+08E00 00 00 00 00               .byte $00, $00, $00, $00	; Tile $00
+08E04 FF 00 00 00               .byte $FF, $00, $00, $00	; Tile $01
+08E08 FF FF 00 00               .byte $FF, $FF, $00, $00	; Tile $02
+08E0C FF 00 FF 00               .byte $FF, $00, $FF, $00	; Tile $03
+08E10 FF FF FF 00               .byte $FF, $FF, $FF, $00	; Tile $04
+08E14 00 00 FF FF               .byte $00, $00, $FF, $FF	; Tile $05
+08E18 00 FF 00 FF               .byte $00, $FF, $00, $FF	; Tile $06
+08E1C FF FF FF FF               .byte $FF, $FF, $FF, $FF	; Tile $07
+08E20                           
+08E20                           ; Background Type (8 - 255)
+08E20 72 73 74 00               .byte $72, $73, $74, $00	; Tile $08 - Lab wall
+08E24 79 7A 7D 7E               .byte $79, $7A, $7D, $7E	; Tile $09 - Tube Base
+08E28 77 78 79 7A               .byte $77, $78, $79, $7A	; Tile $0A - Tube Top
+08E2C 71 76 75 00               .byte $71, $76, $75, $00	; Tile $0B - Pipe Joint
+08E30 76 76 00 00               .byte $76, $76, $00, $00	; Tile $0C - Pipe Horiz
+08E34 75 00 75 00               .byte $75, $00, $75, $00	; Tile $0D - Pipe Vert
+08E38 00 00 7B 0C               .byte $00, $00, $7B, $0C	; Tile $0E - Tube Top Broken
+08E3C 7D 7E 7D 7E               .byte $7D, $7E, $7D, $7E	; Tile $0F - Tank..? (two tube bases stacked)
+08E40                           
+08E40                           coll: 		;informacion de colision del nivel (116 bytes)
+08E40 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E44 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E48 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E4C 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E50 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E54 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E58 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E5C 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
+08E60 3F FF FF F8               .byte %00111111, %11111111, %11111111, %11111000
+08E64 20 00 00 08               .byte %00100000, %00000000, %00000000, %00001000
+08E68 20 00 00 E8               .byte %00100000, %00000000, %00000000, %11101000
+08E6C 20 00 00 28               .byte %00100000, %00000000, %00000000, %00101000
+08E70 20 00 00 28               .byte %00100000, %00000000, %00000000, %00101000
+08E74 20 00 00 28               .byte %00100000, %00000000, %00000000, %00101000
+08E78 20 00 00 2F               .byte %00100000, %00000000, %00000000, %00101111
+08E7C 20 00 00 00               .byte %00100000, %00000000, %00000000, %00000000
+08E80 20 00 00 00               .byte %00100000, %00000000, %00000000, %00000000
+08E84 20 00 00 00               .byte %00100000, %00000000, %00000000, %00000000
+08E88 3F E0 FF FF               .byte %00111111, %11100000, %11111111, %11111111
+08E8C 00 20 80 00               .byte %00000000, %00100000, %10000000, %00000000
+08E90 00 20 80 00               .byte %00000000, %00100000, %10000000, %00000000
+08E94 00 20 80 00               .byte %00000000, %00100000, %10000000, %00000000
+08E98 00 20 FF FE               .byte %00000000, %00100000, %11111111, %11111110
+08E9C 00 20 00 02               .byte %00000000, %00100000, %00000000, %00000010
+08EA0 00 20 00 02               .byte %00000000, %00100000, %00000000, %00000010
+08EA4 00 20 00 02               .byte %00000000, %00100000, %00000000, %00000010
+08EA8 00 20 F8 02               .byte %00000000, %00100000, %11111000, %00000010
+08EAC 00 20 88 02               .byte %00000000, %00100000, %10001000, %00000010
+08EB0 00 20 8F FE               .byte %00000000, %00100000, %10001111, %11111110
+08EB4 00 20 80 00               .byte %00000000, %00100000, %10000000, %00000000 
+08EB8                           
+08EB8 00 00 00 00 00 00 00 00   .align 16
+08EC0                           ; paletas de fondo y de sprites respectivamente
+08EC0                           palette:
+08EC0 0F 2D 10 20 0F 0B 1B 2B.. .incbin "res\paleta_s1b.pal"			;Colores para el fondo del sector 1.	(16 bytes)
+08ED0 0F 07 16 26 0F 18 28 38.. .incbin "res\paleta_sprites.pal"	;Colores para los diferentes objetos móviles(sprites). (16 bytes)
+08EE0                           
+08EE0                           ; Datos del sprite de ogmo
+08EE0                           sprite_ogmo:
+08EE0 00 01 00 00               	.byte $00,$01,$00,$00
+08EE4                           
+08EE4                           ; # - - - - - - - - - - - - - - - - - - - - #
+08EE4                           ; # - - -         Vectores            - - - #
+08EE4                           ; # - - - - - - - - - - - - - - - - - - - - #
+08EE4                           
+08EE4                           ; Define los vectores del procesador apuntando a las respectivas etiquetas.
+08EE4 00 00 00 00 00 00 00 00.. .pad $FFFA
+0FFFA                           
+0FFFA CC 80 51 80 EA 80         .word NMI, RESET, IRQ
+10000                           ;indicamos al procesador a qué dirección tiene que saltar en caso de un Interrupt o Reset
+10000                           
+10000                           ; ( Fin de la PRG-ROM )
+10000                           
+10000                           ; # - - - - - - - - - - - - - - - - - - - - #
+10000                           ; # - - -     CHR-ROM(Gráficos)       - - - #
+10000                           ; # - - - - - - - - - - - - - - - - - - - - #
+10000                           
+10000                           ; Importar binario con los Gráficos de la CHR-ROM
+10000 00 00 00 00 00 00 00 00.. .incbin "res\caracteres.chr"		;(tamaño: 8192 Bytes)
+12000                           
+12000                           ; ( Fin de la CHR-ROM )
