@@ -218,7 +218,7 @@ end_input:
 ; Colisión del jugador en el eje X
 ; Recibe en el reg X qué jugador procesa
 PLY_CheckWallsX:
-	; (Macro)
+	; (sub-rutina)
 	; Chequea la colisión en sus anchas
 	; -1,0 --- 8,0
 	;   |       |
@@ -226,7 +226,7 @@ PLY_CheckWallsX:
 	; -1,7 --- 8,7
 	; 
 	COLL_SquareInTile8 player_x,player_y,coll,-1,0,8,0,-1,7,8,7
-	ldx #0 ; TEST Jugador 1
+	; ldx #0 ; TEST Jugador 1
 	sta player_wall,x ; Guarda la info de colisión
 	tay 							; Copia las colisiones al reg Y
 	and #%00001010		; Chequea las dos esquinas de la izquierda
@@ -260,7 +260,7 @@ PLY_CheckWallsX:
 
 ; Chequea colisión con las paredes en el eje Y
 PLY_CheckWallsY:
-	; (Macro)
+	; (sub-rutina)
 	; Chequea la colisión en sus altas
 	; 0,0 --- 7,0
 	;  |       |
@@ -268,7 +268,7 @@ PLY_CheckWallsY:
 	; 0,8 --- 7,8
 	; 
 	COLL_SquareInTile8 player_x,player_y,coll,0,0,7,0,0,8,7,8
-	ldx #0	; Jugador 1
+	; ldx #0	; Jugador 1
 	tay 											; Copia las colisiones
 	and #%00001100						; Chequea las dos esquinas de arriba
 	beq + 										; si no hay colisión, chequea el siguiente lado
