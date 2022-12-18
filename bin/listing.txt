@@ -987,7 +987,7 @@
 0815D                           
 0815D                           ;;	VARIABLES DE PÁGINA CERO
 0815D                           .enum ASM_ZEROPAGE
-0000F                           game_state			.byte 3 		; Estado del juego.
+0000F                           game_state			.byte 0 		; Estado del juego.
 00010                           														; 	0: Gameplay
 00010                           														; 	1: Pausa
 00010                           														; 	2: Intermission
@@ -1406,7 +1406,7 @@
 08280                           	;   |       |
 08280                           	; -1,7 --- 8,7
 08280                           	; 
-08280                           	COLL_SquareInTile8 player_x,player_y,coll,-1,0,8,0,-1,7,8,7	; pisa reg x
+08280                           	COLL_SquareInTile8 player_x,player_y,coll,-1,0,8,0,-1,7,8,7
 08280                           	; temp3 = coll_flags
 08280                           	
 08280                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
@@ -1508,34 +1508,34 @@
 08304                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
 08304 A5 03                     	lda temp3
 08306                           	; ldx #0 ; TEST Jugador 1
-08306 85 1B                     	sta player_wall ; Guarda la info de colisión
+08306 95 1B                     	sta player_wall,x ; Guarda la info de colisión
 08308 A8                        	tay 							; Copia las colisiones al reg Y
 08309 29 0A                     	and #%00001010		; Chequea las dos esquinas de la izquierda
 0830B F0 15                     	beq + 						; si no hay colisión, chequea el siguiente lado
-0830D A5 12                     		lda player_x		; Pero si hay colision:
+0830D B5 12                     		lda player_x,x	; Pero si hay colision:
 0830F 18                        		clc 						;
 08310 69 07                     		adc #7					; Acomoda al jugador en el tile de la derecha.
 08312 29 F8                     		and #%11111000	;
-08314 85 12                     		sta player_x		;
-08316 A5 16                     		lda player_xv		; Si se estaba moviendo...
+08314 95 12                     		sta player_x,x	;
+08316 B5 16                     		lda player_xv,x ; Si se estaba moviendo...
 08318 F0 08                     		beq + 					;
 0831A A9 00                     			lda #0					; resetea la velocidad horizontal.
-0831C 85 16                     			sta player_xv
-0831E 85 17                     			sta player_xvsub
-08320 85 13                     			sta player_xsub
+0831C 95 16                     			sta player_xv,x 
+0831E 95 17                     			sta player_xvsub,x
+08320 95 13                     			sta player_xsub,x
 08322                           	+ 
 08322 98                        	tya 							; Recupera las colisiones
 08323 29 05                     	and #%00000101		; Chequea las dos esquinas del lado de la derecha
 08325 F0 12                     	beq + 						; si no hay colisión, termina, no pasa más nada
-08327 A5 12                     		lda player_x		; Pero si hay colision:
+08327 B5 12                     		lda player_x,x	; Pero si hay colision:
 08329 29 F8                     		and #%11111000	; Acomoda el jugador en el tile de la izquierda
-0832B 85 12                     		sta player_x		;
-0832D A5 16                     		lda player_xv		; Si se estaba moviendo...
+0832B 95 12                     		sta player_x,x	;
+0832D B5 16                     		lda player_xv,x ; Si se estaba moviendo...
 0832F F0 08                     		beq + 					;
 08331 A9 00                     			lda #0					; resetea la velocidad horizontal.
-08333 85 16                     			sta player_xv
-08335 85 17                     			sta player_xvsub
-08337 85 13                     			sta player_xsub
+08333 95 16                     			sta player_xv,x 
+08335 95 17                     			sta player_xvsub,x
+08337 95 13                     			sta player_xsub,x
 08339                           	+
 08339 60                        	rts
 0833A                           
@@ -1548,7 +1548,7 @@
 0833A                           	;  |       |
 0833A                           	; 0,8 --- 7,8
 0833A                           	; 
-0833A                           	COLL_SquareInTile8 player_x,player_y,coll,0,0,7,0,0,8,7,8 ; pisa reg x
+0833A                           	COLL_SquareInTile8 player_x,player_y,coll,0,0,7,0,0,8,7,8
 0833A                           	; temp3 = coll_flags
 0833A                           	
 0833A                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
@@ -1653,35 +1653,35 @@
 083C0 A8                        	tay 											; Copia las colisiones
 083C1 29 0C                     	and #%00001100						; Chequea las dos esquinas de arriba
 083C3 F0 11                     	beq + 										; si no hay colisión, chequea el siguiente lado
-083C5 A5 14                     		lda player_y						; Pero si hay colision:
+083C5 B5 14                     		lda player_y,x					; Pero si hay colision:
 083C7 18                        		clc 										;
 083C8 69 07                     		adc #7									; Acomoda al jugador en el tile de abajo.
 083CA 29 F8                     		and #%11111000					;
-083CC 85 14                     		sta player_y						;
+083CC 95 14                     		sta player_y,x					;
 083CE A9 00                     		lda #0									; Si está saltando, lo detiene
-083D0 85 18                     		sta player_yv		 				;
-083D2 85 19                     		sta player_yvsub				;
-083D4 85 15                     		sta player_ysub		 			;
+083D0 95 18                     		sta player_yv,x 				;
+083D2 95 19                     		sta player_yvsub,x			;
+083D4 95 15                     		sta player_ysub,x 			;
 083D6                           	+
 083D6 98                        	tya 											; Recupera las colisiones
 083D7 29 03                     	and #%00000011						; Chequea las dos esquinas de abajo
 083D9 F0 19                     	beq + 										; si no hay colisión, está en el aire
 083DB                           		; A veces no entra acá siendo que si está tocando el suelo...
-083DB A5 14                     		lda player_y						; Pero si hay colision:
+083DB B5 14                     		lda player_y,x					; Pero si hay colision:
 083DD 29 F8                     		and #%11111000					; Acomoda el jugador en el tile de arriba
-083DF 85 14                     		sta player_y						;
+083DF 95 14                     		sta player_y,x					;
 083E1 A9 00                     		lda #0									; Si está cayendo, lo detiene.
-083E3 85 18                     		sta player_yv		 				; Ha tocado el suelo
-083E5 85 19                     		sta player_yvsub				;
-083E7 85 15                     		sta player_ysub		 			;
+083E3 95 18                     		sta player_yv,x 				; Ha tocado el suelo
+083E5 95 19                     		sta player_yvsub,x			;
+083E7 95 15                     		sta player_ysub,x 			;
 083E9 A9 01                     		lda #1		; Resetea los saltos disponibles.
-083EB 85 11                     		sta player_jumps				; 
+083EB 95 11                     		sta player_jumps,x			; 
 083ED A9 01                     		lda #1									; Indica que está tocando el suelo.
-083EF 85 1A                     		sta player_ground		 		;
+083EF 95 1A                     		sta player_ground,x 		;
 083F1 4C F8 83                  		jmp ++									; termina
 083F4                           	+ 												; Si no toca el suelo, está en el aire
 083F4 A9 00                     		lda #0									;
-083F6 85 1A                     		sta player_ground		 		;
+083F6 95 1A                     		sta player_ground,x 		;
 083F8                           	++
 083F8 60                        	rts
 083F9                           

@@ -190,7 +190,7 @@ BG_MenuScreen:
 .incbin "res\menu.nam"	; (1024 bytes)
 
 metatiles:
-.include "res\metatiles.asm"	; (1024 bytes)
+.include "res\metatiles.asm"	; (64 bytes)
 
 .align 256
 
