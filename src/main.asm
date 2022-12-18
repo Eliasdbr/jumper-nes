@@ -152,11 +152,11 @@ main_loop:
 	  ldx #0	; Variables del jug 1
 	  jsr PLY_Spawn
 	  ; Player 2 (sólo si el modo 2 players está activado)
-	  lda two_players
-	  beq +
-	  	ldx #PLY_DATA_OFFSET ; Variables del jug 2
-	  	jsr PLY_Spawn
-	  +
+	  ; lda two_players
+	  ; beq +
+	  ; 	ldx #PLY_DATA_OFFSET ; Variables del jug 2
+	  ; 	jsr PLY_Spawn
+	  ; +
 	+
 	
 	; Final del frame
@@ -191,6 +191,8 @@ BG_MenuScreen:
 
 metatiles:
 .include "res\metatiles.asm"	; (1024 bytes)
+
+.align 256
 
 coll: 		;informacion de colision del nivel (116 bytes)
 .byte %00000000, %00000000, %00000000, %00000000
