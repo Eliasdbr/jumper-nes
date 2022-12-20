@@ -1,4 +1,7 @@
 ; Lista de metatiles
+; +0 | +1
+; ---+---
+; +2 | +3
 
 ; BLOCK Type (0 - 7)
 .byte $00, $00, $00, $00	; Tile $00
