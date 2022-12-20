@@ -72,6 +72,15 @@
                                 	sty to2
                                 .endm
                                 
+                                .macro MemBulkCopy from,to,amount			; Copia <amount> bytes. Amount debe ser entre 1 y 256 inclusive (Especificar address mode)
+                                	ldx #amount-1
+                                	-
+                                		lda from,x
+                                		sta to,x
+                                		dex
+                                	bne -
+                                .endm
+                                
                                 .macro PushAXY		; Empuja los registros A,X,Y a la pila.
                                 	pha
                                 	txa
@@ -536,7 +545,7 @@
 080C8 58                        	cli		;Permitir IRQs
 080C9                           	
 080C9                           	; Fin de la inicialización
-080C9 4C 9F 84                  	jmp main_setup		;salta al arranque del juego
+080C9 4C AA 84                  	jmp main_setup		;salta al arranque del juego
 080CC                           
 080CC                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
 080CC                           ; # - - - VBLANK (ya se dibujó el frame anterior. preparar el que sigue   - - - #
@@ -805,7 +814,7 @@
 0812C                           
 0812C                           
 0812C                           ;;	OTRAS VARIABLES
-0812C                           
+0812C                           COLL_level_data = $0300
 0812C                           
 0812C                           ;;	MACROS
 0812C                           ;	Detecta colisión entre dos rectángulos		(Especificar addressing mode)
@@ -1039,7 +1048,7 @@
 0817E                           	; Termina la sub-rutina
 0817E 60                        	rts
 0817F                           
-0817F                           ; Carga un nivel (bg solamente)
+0817F                           ; Carga un nivel
 0817F                           GAME_LoadLevel:
 0817F                           	; Deshabilita las interrupciones
 0817F 78                        	sei
@@ -1048,54 +1057,62 @@
 08180 A9 00                     	lda #0
 08182 8D 00 20                      sta PPUCTRL  ; disable NMI
 08185 8D 01 20                      sta PPUMASK  ; disable rendering
-08188                           	; Cambia el estado del juego a MENU
+08188                           	; Cambia el estado del juego a GAMEPLAY
 08188                           	MemCopy #0,game_state
 08188 A9 00                     	lda #0
 0818A 85 0F                     	sta game_state
-0818C                           	; Carga el background del menú
-0818C A2 00                     	ldx #<bg 			; Byte bajo
-0818E A0 86                     	ldy #>bg 			; Byte alto
-08190 A9 00                     	lda #0										; Nametable 0
-08192 20 2E 80                  	jsr PPU_loadScreen				; Carga la pantalla
-08195                           	; Activar Vblank NMI, Sprites: $0000, Fondo: $1000
-08195                           	ctrl_flags = PPUCTRL_NMI_ENABLE | PPUCTRL_BG_PATTERN
-08195                           	; Muestra los sprites y el fondo
-08195                           	mask_flags = PPUMASK_SHOW_SPR | PPUMASK_SHOW_BG
-08195                           	; Reactiva los gráficos
-08195                           	PPU_Enable ctrl_flags,mask_flags		;es un macro.
-08195 A9 90                     	lda #ctrl_flags
-08197 8D 00 20                  	sta PPUCTRL
-0819A A9 18                     	lda #mask_flags
-0819C 8D 01 20                  	sta PPUMASK
-0819F                           	; Vuelve a aceptar interrupciones
-0819F 58                        	cli
-081A0                           	; Termina la sub-rutina
-081A0 60                        	rts
-081A1                           
-081A1                           ASM_PROGRAM = $
-081A1                           
-081A1                           .include "src/player.asm" 					; Lógica del jugador
-081A1                           ;
-081A1                           ; Jumper (player.asm)
-081A1                           ; por Eliasdbr (eliasdbr@outlook.com)
-081A1                           ; ***Escrito para ASM6 v1.6***
-081A1                           ;  
-081A1                           ; Player logic
-081A1                           
-081A1                           ; CONSTANTES
-081A1                           PLAYER_SPEED		.equ 2	;velocidad de movimiento (en píxeles/frame)
-081A1                           PLAYER_ACCEL		.equ 32 ;aceleración (en sub-píxeles/frame) (es decir: 0.25)
-081A1                           PLAYER_TVEL 		.equ 4	;velocidad máxima de caída (en píxeles/frame)
-081A1                           PLAYER_JUMPSPD	.equ -3 ;velocidad de salto (en píxeles)
-081A1                           PLAYER_WJUMPSPD .equ 3	;velocidad de walljump (en píxeles)
-081A1                           PLAYER_WJUMPCD	.equ 10 ;cooldown de walljump (en frames)
-081A1                           PLAYER_GRAVITY	.equ 32 ;aceleración de gravedad (en sub-píxeles/frame) (es decir: 0.125)
-081A1                           PLAYER_MAXJUMPS .equ 1	;saltos máximos (en el aire)
-081A1                           PLAYER_1_SPR = OAM_PAGE + 1*4 ; Sprite 1
-081A1                           PLAYER_2_SPR = OAM_PAGE + 2*4 ; Sprite 2
-081A1                           
-081A1                           ; Variables de uso intensivo	(desde $0000 a $00FF)
-081A1                           .enum ASM_ZEROPAGE
+0818C                           	; Carga la colisión (temporal)
+0818C                           	MemBulkCopy coll,COLL_level_data,120	; MemBulkCopy from,to,amount
+0818C A2 77                     	ldx #120-1
+0818E                           	-
+0818E BD 00 8F                  		lda coll,x
+08191 9D 00 03                  		sta COLL_level_data,x
+08194 CA                        		dex
+08195 D0 F7                     	bne -
+08197                           	; Carga el background del menú
+08197 A2 00                     	ldx #<bg 			; Byte bajo
+08199 A0 86                     	ldy #>bg 			; Byte alto
+0819B A9 00                     	lda #0										; Nametable 0
+0819D 20 2E 80                  	jsr PPU_loadScreen				; Carga la pantalla
+081A0                           	; Activar Vblank NMI, Sprites: $0000, Fondo: $1000
+081A0                           	ctrl_flags = PPUCTRL_NMI_ENABLE | PPUCTRL_BG_PATTERN
+081A0                           	; Muestra los sprites y el fondo
+081A0                           	mask_flags = PPUMASK_SHOW_SPR | PPUMASK_SHOW_BG
+081A0                           	; Reactiva los gráficos
+081A0                           	PPU_Enable ctrl_flags,mask_flags		;es un macro.
+081A0 A9 90                     	lda #ctrl_flags
+081A2 8D 00 20                  	sta PPUCTRL
+081A5 A9 18                     	lda #mask_flags
+081A7 8D 01 20                  	sta PPUMASK
+081AA                           	; Vuelve a aceptar interrupciones
+081AA 58                        	cli
+081AB                           	; Termina la sub-rutina
+081AB 60                        	rts
+081AC                           
+081AC                           ASM_PROGRAM = $
+081AC                           
+081AC                           .include "src/player.asm" 					; Lógica del jugador
+081AC                           ;
+081AC                           ; Jumper (player.asm)
+081AC                           ; por Eliasdbr (eliasdbr@outlook.com)
+081AC                           ; ***Escrito para ASM6 v1.6***
+081AC                           ;  
+081AC                           ; Player logic
+081AC                           
+081AC                           ; CONSTANTES
+081AC                           PLAYER_SPEED		.equ 2	;velocidad de movimiento (en píxeles/frame)
+081AC                           PLAYER_ACCEL		.equ 32 ;aceleración (en sub-píxeles/frame) (es decir: 0.25)
+081AC                           PLAYER_TVEL 		.equ 4	;velocidad máxima de caída (en píxeles/frame)
+081AC                           PLAYER_JUMPSPD	.equ -3 ;velocidad de salto (en píxeles)
+081AC                           PLAYER_WJUMPSPD .equ 3	;velocidad de walljump (en píxeles)
+081AC                           PLAYER_WJUMPCD	.equ 10 ;cooldown de walljump (en frames)
+081AC                           PLAYER_GRAVITY	.equ 32 ;aceleración de gravedad (en sub-píxeles/frame) (es decir: 0.125)
+081AC                           PLAYER_MAXJUMPS .equ 1	;saltos máximos (en el aire)
+081AC                           PLAYER_1_SPR = OAM_PAGE + 1*4 ; Sprite 1
+081AC                           PLAYER_2_SPR = OAM_PAGE + 2*4 ; Sprite 2
+081AC                           
+081AC                           ; Variables de uso intensivo	(desde $0000 a $00FF)
+081AC                           .enum ASM_ZEROPAGE
 00011                           
 00011                           ; para llevar la cuenta de cuántos bytes ocupan
 00011                           ; los datos de un jugador, creamos una constante.
@@ -1135,942 +1152,942 @@
 00029                           
 00029                           ASM_ZEROPAGE = $
 00029                           .ende
-081A1                           ; Variables normales			(desde $0300 a $0800)
-081A1                           ; Nada aún
-081A1                           
-081A1                           ; --- MACROS ---
-081A1                           ; Player Physics
-081A1                           .macro PLY_PhysicsUpdate player_data_offset
-081A1                           	; Mueve al jugador horizontalmente dependiendo del input
-081A1                           	; Si acaba de hacer un Wall Jump, no acepta input por unos frames
-081A1                           	ldx #player_data_offset 	; Jugador 1
-081A1                           	lda player_wjcd,x 				;
-081A1                           	bne + 										;
-081A1                           		jsr PLY_JoyAccelerateAxis
-081A1                           	+
-081A1                           	ldx #0	; Jugador 1
-081A1                           	MOVE_ApplyVelocityAxisSub player_x,player_xsub,player_xv,player_xvsub
-081A1                           	
-081A1                           	;Que no se pase del extremo izquierdo
-081A1                           	ldx #player_data_offset 	; Jugador 1
-081A1                           	lda player_x,x
-081A1                           	cmp #5
-081A1                           	bmi + 				; si player_x está entre 5 y 7:
-081A1                           	cmp #7
-081A1                           	bpl +
-081A1                           		lda #8			; pone al player en la posición 8 en X
-081A1                           		sta player_x,x
-081A1                           	+
-081A1                           
-081A1                           	;Chequea colisión con mapa de tiles. Eje X
-081A1                           	ldx #player_data_offset 		; Jugador 1
-081A1                           	lda #0						; Resetea las flags de si está tocando las paredes
-081A1                           	sta player_wall,x 	;
-081A1                           	jsr PLY_CheckWallsX
-081A1                           
-081A1                           	;Maneja la gravedad y el salto del jugador
-081A1                           	ldx #player_data_offset 		; Jugador 1
-081A1                           	jsr PLY_JumpFall	;
-081A1                           	
-081A1                           	; Chequea colisión con mapa de tiles. Eje Y
-081A1                           	ldx #player_data_offset						; Jugador 1
-081A1                           	jsr PLY_CheckWallsY
-081A1                           .endm
-081A1                           
-081A1                           ; --- SUB-RUTINAS ---
-081A1                           .base ASM_PROGRAM
-081A1                           
-081A1                           ; Player Spawn
-081A1                           ; Inicializa al jugador
-081A1                           ; Parámetros:
-081A1                           ; 	X: 0: Jugador 1
-081A1                           ; 		 9: Jugador 2
-081A1                           PLY_Spawn:
-081A1                           	; Resetea las velocidades
-081A1 A9 00                     	lda #0
-081A3 95 18                     	sta player_yv,x
-081A5 95 15                     	sta player_ysub,x
-081A7 95 19                     	sta player_yvsub,x
-081A9 95 16                     	sta player_xv,x
-081AB 95 13                     	sta player_xsub,x
-081AD 95 17                     	sta player_xvsub,x
-081AF                           	; Resetea el cooldown del walljump
-081AF 95 1C                     	sta player_wjcd,x
-081B1                           	; Punto de entrada del nivel (proximamente será reemplazado por la info del nivel)
-081B1 A9 40                     	lda #$40
-081B3 95 12                     	sta player_x,x
-081B5 A9 80                     	lda #$80
-081B7 95 14                     	sta player_y,x
-081B9                           	; Resetea los saltos
-081B9 A9 01                     	lda #1
-081BB 95 11                     	sta player_jumps,x
-081BD 60                        	rts 	; Volver de Sub-Rutina
-081BE                           
-081BE                           ; Aceleración horizontal dependiendo del input
-081BE                           ; Parámetros:
-081BE                           ; 	X: Offset de datos del jugador (0 o PLY_DATA_OFFSET)
-081BE                           PLY_JoyAccelerateAxis:
-081BE                           	; Mira qué jugador está por procesar en el registro X
-081BE 8A                        	txa
-081BF D0 0C                     	bne + 							; Si es el jugador 2, saltea al otro joypad
-081C1                           		IO_CheckButton 1,JP_LEFT,0
-081C1 A5 0B                     	lda joypad1 + (1 - 1)*2
-081C3 29 02                     	and #JP_LEFT
-081C5 F0 00                     	beq @end
-081C7                           	IF 0
-081C7                           		eor joypad1_prev + (1 - 1)*2
-081C7                           		and #JP_LEFT
-081C7                           	ENDIF
-081C7                           	@end:
-081C7 C9 00                     	cmp #0
-081C9                           	; Regresa el estado de la flag "Zero"
-081C9                           	; También deja el estado del botón en A.
-081C9                           	; (A == 0: Falso -- A != 0: Verdadero)
-081C9 A8                        		tay 							; Almacena temporalmente el resultado.
-081CA 4C D6 81                  		jmp ++						; Saltea el joypad 2
-081CD                           	+
-081CD                           		IO_CheckButton 2,JP_LEFT,0
-081CD A5 0D                     	lda joypad1 + (2 - 1)*2
-081CF 29 02                     	and #JP_LEFT
-081D1 F0 00                     	beq @end
-081D3                           	IF 0
-081D3                           		eor joypad1_prev + (2 - 1)*2
-081D3                           		and #JP_LEFT
-081D3                           	ENDIF
-081D3                           	@end:
-081D3 C9 00                     	cmp #0
-081D5                           	; Regresa el estado de la flag "Zero"
-081D5                           	; También deja el estado del botón en A.
-081D5                           	; (A == 0: Falso -- A != 0: Verdadero)
-081D5 A8                        		tay 							; Almacena temporalmente el resultado.
-081D6                           	++
-081D6 98                        	tya 								; Recupera el estado del botón presionado (Libera Y)
-081D7 F0 32                     	beq ++							; Si el botón < está siendo presionado:
-081D9                           		; Acelera hacia la izquierda.
-081D9                           		; recibe por el reg X la dirección del jugaor
-081D9                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32
-081D9 18                        	clc 						;
-081DA B5 17                     	lda player_xvsub,x 	;
-081DC 69 E0                     	adc #-32 		;
-081DE 95 17                     	sta player_xvsub,x 	;
-081E0 B5 16                     	lda player_xv,x 			;
-081E2 69 FF                     	adc #-1 				;
-081E4 95 16                     	sta player_xv,x 			;
-081E6                           		; Si estaba yendo a la derecha, frena más rápido.
-081E6 B5 16                     		lda player_xv,x
-081E8 30 0D                     		bmi +
-081EA                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32*2
-081EA 18                        	clc 						;
-081EB B5 17                     	lda player_xvsub,x 	;
-081ED 69 C0                     	adc #-32*2 		;
-081EF 95 17                     	sta player_xvsub,x 	;
-081F1 B5 16                     	lda player_xv,x 			;
-081F3 69 FF                     	adc #-1 				;
-081F5 95 16                     	sta player_xv,x 			;
-081F7                           		+
-081F7 B5 16                     		lda player_xv,x 		; Chequea si superó la velocidad máxima:
-081F9 C9 FE                     		cmp #-2	;
-081FB 10 0D                     		bpl @maxv						; 
-081FD                           			; Desacelera hasta igualar la velocidad máxima
-081FD                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32*2
-081FD 18                        	clc 						;
-081FE B5 17                     	lda player_xvsub,x 	;
-08200 69 40                     	adc #32*2 		;
-08202 95 17                     	sta player_xvsub,x 	;
-08204 B5 16                     	lda player_xv,x 			;
-08206 69 00                     	adc #0 				;
-08208 95 16                     	sta player_xv,x 			;
-0820A                           			;lda #-PLAYER_SPEED 
-0820A                           			;sta player_xv,x 	; Hace clamp a la velocidad máxima
-0820A                           			;lda #0						;
-0820A                           			;sta player_xvsub,x
-0820A                           			;sta player_xsub,x
-0820A                           		@maxv: 							;
-0820A 60                        		rts 			; Fin de aceleración
-0820B                           	++
-0820B 8A                        	txa 								; Mira de nuevo qué jugador estamos procesando
-0820C D0 0C                     	bne + 							; Si es el jugador 2, saltea al otro joypad
-0820E                           		IO_CheckButton 1,JP_RIGHT,0
-0820E A5 0B                     	lda joypad1 + (1 - 1)*2
-08210 29 01                     	and #JP_RIGHT
-08212 F0 00                     	beq @end
-08214                           	IF 0
-08214                           		eor joypad1_prev + (1 - 1)*2
-08214                           		and #JP_RIGHT
-08214                           	ENDIF
-08214                           	@end:
-08214 C9 00                     	cmp #0
-08216                           	; Regresa el estado de la flag "Zero"
-08216                           	; También deja el estado del botón en A.
-08216                           	; (A == 0: Falso -- A != 0: Verdadero)
-08216 A8                        		tay 							; Almacena temporalmente el resultado.
-08217 4C 23 82                  		jmp ++						; Saltea el joypad 2
-0821A                           	+
-0821A                           		IO_CheckButton 2,JP_RIGHT,0
-0821A A5 0D                     	lda joypad1 + (2 - 1)*2
-0821C 29 01                     	and #JP_RIGHT
-0821E F0 00                     	beq @end
-08220                           	IF 0
-08220                           		eor joypad1_prev + (2 - 1)*2
-08220                           		and #JP_RIGHT
-08220                           	ENDIF
-08220                           	@end:
-08220 C9 00                     	cmp #0
-08222                           	; Regresa el estado de la flag "Zero"
-08222                           	; También deja el estado del botón en A.
-08222                           	; (A == 0: Falso -- A != 0: Verdadero)
-08222 A8                        		tay 							; Almacena temporalmente el resultado.
-08223                           	++
-08223 98                        	tya 								; Recupera el estado del botón presionado (Libera Y)
-08224 F0 32                     	beq ++							; Si el botón > está siendo presionado:
-08226                           		; Acelera hacia la derecha.
-08226                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32
-08226 18                        	clc 						;
-08227 B5 17                     	lda player_xvsub,x 	;
-08229 69 20                     	adc #32 		;
-0822B 95 17                     	sta player_xvsub,x 	;
-0822D B5 16                     	lda player_xv,x 			;
-0822F 69 00                     	adc #0 				;
-08231 95 16                     	sta player_xv,x 			;
-08233                           		; Si estaba yendo a la izquierda, frena más rápido.
-08233 B5 16                     		lda player_xv,x
-08235 10 0D                     		bpl +
-08237                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32*2
-08237 18                        	clc 						;
-08238 B5 17                     	lda player_xvsub,x 	;
-0823A 69 40                     	adc #32*2 		;
-0823C 95 17                     	sta player_xvsub,x 	;
-0823E B5 16                     	lda player_xv,x 			;
-08240 69 00                     	adc #0 				;
-08242 95 16                     	sta player_xv,x 			;
-08244                           		+
-08244 B5 16                     		lda player_xv,x 		; Chequea si superó la velocidad máxima:
-08246 C9 02                     		cmp #2 	;
-08248 30 0D                     		bmi @minv						; De ser así:
-0824A                           			; Desacelera hasta igualar la velocidad máxima
-0824A                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32*2
-0824A 18                        	clc 						;
-0824B B5 17                     	lda player_xvsub,x 	;
-0824D 69 C0                     	adc #-32*2 		;
-0824F 95 17                     	sta player_xvsub,x 	;
-08251 B5 16                     	lda player_xv,x 			;
-08253 69 FF                     	adc #-1 				;
-08255 95 16                     	sta player_xv,x 			;
-08257                           			;lda #PLAYER_SPEED ;
-08257                           			;sta player_xv,x		; Hace clamp a la velocidad máxima
-08257                           			;lda #0						;
-08257                           			;sta player_xvsub,x
-08257                           			;sta player_xsub,x
-08257                           		@minv: 							;
-08257 60                        		rts 								; Fin de la aceleración.
-08258                           	++ 
-08258                           		; - Desaceleración -
-08258 B5 16                     	lda player_xv,x			; Si ningún botón está siendo presionado:
-0825A D0 04                     	bne + 							; Y si la velocidad actual del jugador es 0:
-0825C B5 17                     		lda player_xvsub,x; Chequea si la velocidad sub-pixel es 0.
-0825E F0 1F                     		beq end_input 		; Si es cero, termina la desaceleración.
-08260                           	+ 
-08260 B5 16                     	lda player_xv,x 		; Chequea si la velocidad es negativa
-08262 30 0E                     	bmi + 							; 
-08264                           	; Si es positiva, desacelera hacia la izquierda.
-08264                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32
-08264 18                        	clc 						;
-08265 B5 17                     	lda player_xvsub,x 	;
-08267 69 E0                     	adc #-32 		;
-08269 95 17                     	sta player_xvsub,x 	;
-0826B B5 16                     	lda player_xv,x 			;
-0826D 69 FF                     	adc #-1 				;
-0826F 95 16                     	sta player_xv,x 			;
-08271 60                        		rts 							; Termina
-08272                           	+ 
-08272                           	; Si es negativa, desacelera hacia la derecha.
-08272                           	MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32
-08272 18                        	clc 						;
-08273 B5 17                     	lda player_xvsub,x 	;
-08275 69 20                     	adc #32 		;
-08277 95 17                     	sta player_xvsub,x 	;
-08279 B5 16                     	lda player_xv,x 			;
-0827B 69 00                     	adc #0 				;
-0827D 95 16                     	sta player_xv,x 			;
-0827F                           end_input: 
-0827F 60                        	rts
-08280                           	; FIN DE SUB-RUTINA
-08280                           
-08280                           ; Colisión del jugador en el eje X
-08280                           ; Recibe en el reg X qué jugador procesa
-08280                           PLY_CheckWallsX:
-08280                           	; (sub-rutina)
-08280                           	; Chequea la colisión en sus anchas
-08280                           	; -1,0 --- 8,0
-08280                           	;   |       |
-08280                           	;   |       |
-08280                           	; -1,7 --- 8,7
-08280                           	; 
-08280                           	COLL_SquareInTile8 player_x,player_y,coll,-1,0,8,0,-1,7,8,7
-08280                           	; temp3 = coll_flags
-08280                           	
-08280                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
-08280 A9 00                     	lda #0
-08282 85 03                     	sta temp3
-08284                           	MemCopy2 #<coll,#>coll,temp0,temp1
-08284 A2 00                     	ldx #<coll
-08286 A0 8F                     	ldy #>coll
-08288 86 00                     	stx temp0
-0828A 84 01                     	sty temp1
-0828C                           	COLL_PointInBitmap8 player_x,player_y,-1,0
-0828C 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-0828E                           	;posición x
-0828E B5 12                     	lda player_x,x
-08290 18                        	clc
-08291 69 FF                     	adc #-1
-08293 4A                        	lsr
-08294 4A                        	lsr
-08295 4A                        	lsr
-08296 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-08298                           	;posición y
-08298 B5 14                     	lda player_y,x
-0829A 18                        	clc
-0829B 69 00                     	adc #0
-0829D 4A                        	lsr
+081AC                           ; Variables normales			(desde $0300 a $0800)
+081AC                           ; Nada aún
+081AC                           
+081AC                           ; --- MACROS ---
+081AC                           ; Player Physics
+081AC                           .macro PLY_PhysicsUpdate player_data_offset
+081AC                           	; Mueve al jugador horizontalmente dependiendo del input
+081AC                           	; Si acaba de hacer un Wall Jump, no acepta input por unos frames
+081AC                           	ldx #player_data_offset 	; Jugador 1
+081AC                           	lda player_wjcd,x 				;
+081AC                           	bne + 										;
+081AC                           		jsr PLY_JoyAccelerateAxis
+081AC                           	+
+081AC                           	ldx #0	; Jugador 1
+081AC                           	MOVE_ApplyVelocityAxisSub player_x,player_xsub,player_xv,player_xvsub
+081AC                           	
+081AC                           	;Que no se pase del extremo izquierdo
+081AC                           	ldx #player_data_offset 	; Jugador 1
+081AC                           	lda player_x,x
+081AC                           	cmp #5
+081AC                           	bmi + 				; si player_x está entre 5 y 7:
+081AC                           	cmp #7
+081AC                           	bpl +
+081AC                           		lda #8			; pone al player en la posición 8 en X
+081AC                           		sta player_x,x
+081AC                           	+
+081AC                           
+081AC                           	;Chequea colisión con mapa de tiles. Eje X
+081AC                           	ldx #player_data_offset 		; Jugador 1
+081AC                           	lda #0						; Resetea las flags de si está tocando las paredes
+081AC                           	sta player_wall,x 	;
+081AC                           	jsr PLY_CheckWallsX
+081AC                           
+081AC                           	;Maneja la gravedad y el salto del jugador
+081AC                           	ldx #player_data_offset 		; Jugador 1
+081AC                           	jsr PLY_JumpFall	;
+081AC                           	
+081AC                           	; Chequea colisión con mapa de tiles. Eje Y
+081AC                           	ldx #player_data_offset						; Jugador 1
+081AC                           	jsr PLY_CheckWallsY
+081AC                           .endm
+081AC                           
+081AC                           ; --- SUB-RUTINAS ---
+081AC                           .base ASM_PROGRAM
+081AC                           
+081AC                           ; Player Spawn
+081AC                           ; Inicializa al jugador
+081AC                           ; Parámetros:
+081AC                           ; 	X: 0: Jugador 1
+081AC                           ; 		 9: Jugador 2
+081AC                           PLY_Spawn:
+081AC                           	; Resetea las velocidades
+081AC A9 00                     	lda #0
+081AE 95 18                     	sta player_yv,x
+081B0 95 15                     	sta player_ysub,x
+081B2 95 19                     	sta player_yvsub,x
+081B4 95 16                     	sta player_xv,x
+081B6 95 13                     	sta player_xsub,x
+081B8 95 17                     	sta player_xvsub,x
+081BA                           	; Resetea el cooldown del walljump
+081BA 95 1C                     	sta player_wjcd,x
+081BC                           	; Punto de entrada del nivel (proximamente será reemplazado por la info del nivel)
+081BC A9 40                     	lda #$40
+081BE 95 12                     	sta player_x,x
+081C0 A9 80                     	lda #$80
+081C2 95 14                     	sta player_y,x
+081C4                           	; Resetea los saltos
+081C4 A9 01                     	lda #1
+081C6 95 11                     	sta player_jumps,x
+081C8 60                        	rts 	; Volver de Sub-Rutina
+081C9                           
+081C9                           ; Aceleración horizontal dependiendo del input
+081C9                           ; Parámetros:
+081C9                           ; 	X: Offset de datos del jugador (0 o PLY_DATA_OFFSET)
+081C9                           PLY_JoyAccelerateAxis:
+081C9                           	; Mira qué jugador está por procesar en el registro X
+081C9 8A                        	txa
+081CA D0 0C                     	bne + 							; Si es el jugador 2, saltea al otro joypad
+081CC                           		IO_CheckButton 1,JP_LEFT,0
+081CC A5 0B                     	lda joypad1 + (1 - 1)*2
+081CE 29 02                     	and #JP_LEFT
+081D0 F0 00                     	beq @end
+081D2                           	IF 0
+081D2                           		eor joypad1_prev + (1 - 1)*2
+081D2                           		and #JP_LEFT
+081D2                           	ENDIF
+081D2                           	@end:
+081D2 C9 00                     	cmp #0
+081D4                           	; Regresa el estado de la flag "Zero"
+081D4                           	; También deja el estado del botón en A.
+081D4                           	; (A == 0: Falso -- A != 0: Verdadero)
+081D4 A8                        		tay 							; Almacena temporalmente el resultado.
+081D5 4C E1 81                  		jmp ++						; Saltea el joypad 2
+081D8                           	+
+081D8                           		IO_CheckButton 2,JP_LEFT,0
+081D8 A5 0D                     	lda joypad1 + (2 - 1)*2
+081DA 29 02                     	and #JP_LEFT
+081DC F0 00                     	beq @end
+081DE                           	IF 0
+081DE                           		eor joypad1_prev + (2 - 1)*2
+081DE                           		and #JP_LEFT
+081DE                           	ENDIF
+081DE                           	@end:
+081DE C9 00                     	cmp #0
+081E0                           	; Regresa el estado de la flag "Zero"
+081E0                           	; También deja el estado del botón en A.
+081E0                           	; (A == 0: Falso -- A != 0: Verdadero)
+081E0 A8                        		tay 							; Almacena temporalmente el resultado.
+081E1                           	++
+081E1 98                        	tya 								; Recupera el estado del botón presionado (Libera Y)
+081E2 F0 32                     	beq ++							; Si el botón < está siendo presionado:
+081E4                           		; Acelera hacia la izquierda.
+081E4                           		; recibe por el reg X la dirección del jugaor
+081E4                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32
+081E4 18                        	clc 						;
+081E5 B5 17                     	lda player_xvsub,x 	;
+081E7 69 E0                     	adc #-32 		;
+081E9 95 17                     	sta player_xvsub,x 	;
+081EB B5 16                     	lda player_xv,x 			;
+081ED 69 FF                     	adc #-1 				;
+081EF 95 16                     	sta player_xv,x 			;
+081F1                           		; Si estaba yendo a la derecha, frena más rápido.
+081F1 B5 16                     		lda player_xv,x
+081F3 30 0D                     		bmi +
+081F5                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32*2
+081F5 18                        	clc 						;
+081F6 B5 17                     	lda player_xvsub,x 	;
+081F8 69 C0                     	adc #-32*2 		;
+081FA 95 17                     	sta player_xvsub,x 	;
+081FC B5 16                     	lda player_xv,x 			;
+081FE 69 FF                     	adc #-1 				;
+08200 95 16                     	sta player_xv,x 			;
+08202                           		+
+08202 B5 16                     		lda player_xv,x 		; Chequea si superó la velocidad máxima:
+08204 C9 FE                     		cmp #-2	;
+08206 10 0D                     		bpl @maxv						; 
+08208                           			; Desacelera hasta igualar la velocidad máxima
+08208                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32*2
+08208 18                        	clc 						;
+08209 B5 17                     	lda player_xvsub,x 	;
+0820B 69 40                     	adc #32*2 		;
+0820D 95 17                     	sta player_xvsub,x 	;
+0820F B5 16                     	lda player_xv,x 			;
+08211 69 00                     	adc #0 				;
+08213 95 16                     	sta player_xv,x 			;
+08215                           			;lda #-PLAYER_SPEED 
+08215                           			;sta player_xv,x 	; Hace clamp a la velocidad máxima
+08215                           			;lda #0						;
+08215                           			;sta player_xvsub,x
+08215                           			;sta player_xsub,x
+08215                           		@maxv: 							;
+08215 60                        		rts 			; Fin de aceleración
+08216                           	++
+08216 8A                        	txa 								; Mira de nuevo qué jugador estamos procesando
+08217 D0 0C                     	bne + 							; Si es el jugador 2, saltea al otro joypad
+08219                           		IO_CheckButton 1,JP_RIGHT,0
+08219 A5 0B                     	lda joypad1 + (1 - 1)*2
+0821B 29 01                     	and #JP_RIGHT
+0821D F0 00                     	beq @end
+0821F                           	IF 0
+0821F                           		eor joypad1_prev + (1 - 1)*2
+0821F                           		and #JP_RIGHT
+0821F                           	ENDIF
+0821F                           	@end:
+0821F C9 00                     	cmp #0
+08221                           	; Regresa el estado de la flag "Zero"
+08221                           	; También deja el estado del botón en A.
+08221                           	; (A == 0: Falso -- A != 0: Verdadero)
+08221 A8                        		tay 							; Almacena temporalmente el resultado.
+08222 4C 2E 82                  		jmp ++						; Saltea el joypad 2
+08225                           	+
+08225                           		IO_CheckButton 2,JP_RIGHT,0
+08225 A5 0D                     	lda joypad1 + (2 - 1)*2
+08227 29 01                     	and #JP_RIGHT
+08229 F0 00                     	beq @end
+0822B                           	IF 0
+0822B                           		eor joypad1_prev + (2 - 1)*2
+0822B                           		and #JP_RIGHT
+0822B                           	ENDIF
+0822B                           	@end:
+0822B C9 00                     	cmp #0
+0822D                           	; Regresa el estado de la flag "Zero"
+0822D                           	; También deja el estado del botón en A.
+0822D                           	; (A == 0: Falso -- A != 0: Verdadero)
+0822D A8                        		tay 							; Almacena temporalmente el resultado.
+0822E                           	++
+0822E 98                        	tya 								; Recupera el estado del botón presionado (Libera Y)
+0822F F0 32                     	beq ++							; Si el botón > está siendo presionado:
+08231                           		; Acelera hacia la derecha.
+08231                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32
+08231 18                        	clc 						;
+08232 B5 17                     	lda player_xvsub,x 	;
+08234 69 20                     	adc #32 		;
+08236 95 17                     	sta player_xvsub,x 	;
+08238 B5 16                     	lda player_xv,x 			;
+0823A 69 00                     	adc #0 				;
+0823C 95 16                     	sta player_xv,x 			;
+0823E                           		; Si estaba yendo a la izquierda, frena más rápido.
+0823E B5 16                     		lda player_xv,x
+08240 10 0D                     		bpl +
+08242                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32*2
+08242 18                        	clc 						;
+08243 B5 17                     	lda player_xvsub,x 	;
+08245 69 40                     	adc #32*2 		;
+08247 95 17                     	sta player_xvsub,x 	;
+08249 B5 16                     	lda player_xv,x 			;
+0824B 69 00                     	adc #0 				;
+0824D 95 16                     	sta player_xv,x 			;
+0824F                           		+
+0824F B5 16                     		lda player_xv,x 		; Chequea si superó la velocidad máxima:
+08251 C9 02                     		cmp #2 	;
+08253 30 0D                     		bmi @minv						; De ser así:
+08255                           			; Desacelera hasta igualar la velocidad máxima
+08255                           			MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32*2
+08255 18                        	clc 						;
+08256 B5 17                     	lda player_xvsub,x 	;
+08258 69 C0                     	adc #-32*2 		;
+0825A 95 17                     	sta player_xvsub,x 	;
+0825C B5 16                     	lda player_xv,x 			;
+0825E 69 FF                     	adc #-1 				;
+08260 95 16                     	sta player_xv,x 			;
+08262                           			;lda #PLAYER_SPEED ;
+08262                           			;sta player_xv,x		; Hace clamp a la velocidad máxima
+08262                           			;lda #0						;
+08262                           			;sta player_xvsub,x
+08262                           			;sta player_xsub,x
+08262                           		@minv: 							;
+08262 60                        		rts 								; Fin de la aceleración.
+08263                           	++ 
+08263                           		; - Desaceleración -
+08263 B5 16                     	lda player_xv,x			; Si ningún botón está siendo presionado:
+08265 D0 04                     	bne + 							; Y si la velocidad actual del jugador es 0:
+08267 B5 17                     		lda player_xvsub,x; Chequea si la velocidad sub-pixel es 0.
+08269 F0 1F                     		beq end_input 		; Si es cero, termina la desaceleración.
+0826B                           	+ 
+0826B B5 16                     	lda player_xv,x 		; Chequea si la velocidad es negativa
+0826D 30 0E                     	bmi + 							; 
+0826F                           	; Si es positiva, desacelera hacia la izquierda.
+0826F                           		MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#-1,#-32
+0826F 18                        	clc 						;
+08270 B5 17                     	lda player_xvsub,x 	;
+08272 69 E0                     	adc #-32 		;
+08274 95 17                     	sta player_xvsub,x 	;
+08276 B5 16                     	lda player_xv,x 			;
+08278 69 FF                     	adc #-1 				;
+0827A 95 16                     	sta player_xv,x 			;
+0827C 60                        		rts 							; Termina
+0827D                           	+ 
+0827D                           	; Si es negativa, desacelera hacia la derecha.
+0827D                           	MOVE_ApplyVelocityAxisSub player_xv,player_xvsub,#0,#32
+0827D 18                        	clc 						;
+0827E B5 17                     	lda player_xvsub,x 	;
+08280 69 20                     	adc #32 		;
+08282 95 17                     	sta player_xvsub,x 	;
+08284 B5 16                     	lda player_xv,x 			;
+08286 69 00                     	adc #0 				;
+08288 95 16                     	sta player_xv,x 			;
+0828A                           end_input: 
+0828A 60                        	rts
+0828B                           	; FIN DE SUB-RUTINA
+0828B                           
+0828B                           ; Colisión del jugador en el eje X
+0828B                           ; Recibe en el reg X qué jugador procesa
+0828B                           PLY_CheckWallsX:
+0828B                           	; (sub-rutina)
+0828B                           	; Chequea la colisión en sus anchas
+0828B                           	; -1,0 --- 8,0
+0828B                           	;   |       |
+0828B                           	;   |       |
+0828B                           	; -1,7 --- 8,7
+0828B                           	; 
+0828B                           	COLL_SquareInTile8 player_x,player_y,COLL_level_data,-1,0,8,0,-1,7,8,7
+0828B                           	; temp3 = coll_flags
+0828B                           	
+0828B                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
+0828B A9 00                     	lda #0
+0828D 85 03                     	sta temp3
+0828F                           	MemCopy2 #<COLL_level_data,#>COLL_level_data,temp0,temp1
+0828F A2 00                     	ldx #<COLL_level_data
+08291 A0 03                     	ldy #>COLL_level_data
+08293 86 00                     	stx temp0
+08295 84 01                     	sty temp1
+08297                           	COLL_PointInBitmap8 player_x,player_y,-1,0
+08297 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+08299                           	;posición x
+08299 B5 12                     	lda player_x,x
+0829B 18                        	clc
+0829C 69 FF                     	adc #-1
 0829E 4A                        	lsr
 0829F 4A                        	lsr
-082A0 A8                        	tay					; posicion tile Y
-082A1 A6 07                     	ldx temp7		; posicion tile X
-082A3 20 44 81                  	jsr COLL_TileBitmap8
-082A6 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-082A8 26 03                     	rol temp3
-082AA                           	COLL_PointInBitmap8 player_x,player_y,8,0
-082AA 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-082AC                           	;posición x
-082AC B5 12                     	lda player_x,x
-082AE 18                        	clc
-082AF 69 08                     	adc #8
-082B1 4A                        	lsr
-082B2 4A                        	lsr
-082B3 4A                        	lsr
-082B4 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-082B6                           	;posición y
-082B6 B5 14                     	lda player_y,x
-082B8 18                        	clc
-082B9 69 00                     	adc #0
-082BB 4A                        	lsr
+082A0 4A                        	lsr
+082A1 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+082A3                           	;posición y
+082A3 B5 14                     	lda player_y,x
+082A5 18                        	clc
+082A6 69 00                     	adc #0
+082A8 4A                        	lsr
+082A9 4A                        	lsr
+082AA 4A                        	lsr
+082AB A8                        	tay					; posicion tile Y
+082AC A6 07                     	ldx temp7		; posicion tile X
+082AE 20 44 81                  	jsr COLL_TileBitmap8
+082B1 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+082B3 26 03                     	rol temp3
+082B5                           	COLL_PointInBitmap8 player_x,player_y,8,0
+082B5 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+082B7                           	;posición x
+082B7 B5 12                     	lda player_x,x
+082B9 18                        	clc
+082BA 69 08                     	adc #8
 082BC 4A                        	lsr
 082BD 4A                        	lsr
-082BE A8                        	tay					; posicion tile Y
-082BF A6 07                     	ldx temp7		; posicion tile X
-082C1 20 44 81                  	jsr COLL_TileBitmap8
-082C4 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-082C6 26 03                     	rol temp3
-082C8                           	COLL_PointInBitmap8 player_x,player_y,-1,7
-082C8 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-082CA                           	;posición x
-082CA B5 12                     	lda player_x,x
-082CC 18                        	clc
-082CD 69 FF                     	adc #-1
-082CF 4A                        	lsr
-082D0 4A                        	lsr
-082D1 4A                        	lsr
-082D2 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-082D4                           	;posición y
-082D4 B5 14                     	lda player_y,x
-082D6 18                        	clc
-082D7 69 07                     	adc #7
-082D9 4A                        	lsr
+082BE 4A                        	lsr
+082BF 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+082C1                           	;posición y
+082C1 B5 14                     	lda player_y,x
+082C3 18                        	clc
+082C4 69 00                     	adc #0
+082C6 4A                        	lsr
+082C7 4A                        	lsr
+082C8 4A                        	lsr
+082C9 A8                        	tay					; posicion tile Y
+082CA A6 07                     	ldx temp7		; posicion tile X
+082CC 20 44 81                  	jsr COLL_TileBitmap8
+082CF A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+082D1 26 03                     	rol temp3
+082D3                           	COLL_PointInBitmap8 player_x,player_y,-1,7
+082D3 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+082D5                           	;posición x
+082D5 B5 12                     	lda player_x,x
+082D7 18                        	clc
+082D8 69 FF                     	adc #-1
 082DA 4A                        	lsr
 082DB 4A                        	lsr
-082DC A8                        	tay					; posicion tile Y
-082DD A6 07                     	ldx temp7		; posicion tile X
-082DF 20 44 81                  	jsr COLL_TileBitmap8
-082E2 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-082E4 26 03                     	rol temp3
-082E6                           	COLL_PointInBitmap8 player_x,player_y,8,7
-082E6 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-082E8                           	;posición x
-082E8 B5 12                     	lda player_x,x
-082EA 18                        	clc
-082EB 69 08                     	adc #8
-082ED 4A                        	lsr
-082EE 4A                        	lsr
-082EF 4A                        	lsr
-082F0 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-082F2                           	;posición y
-082F2 B5 14                     	lda player_y,x
-082F4 18                        	clc
-082F5 69 07                     	adc #7
-082F7 4A                        	lsr
+082DC 4A                        	lsr
+082DD 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+082DF                           	;posición y
+082DF B5 14                     	lda player_y,x
+082E1 18                        	clc
+082E2 69 07                     	adc #7
+082E4 4A                        	lsr
+082E5 4A                        	lsr
+082E6 4A                        	lsr
+082E7 A8                        	tay					; posicion tile Y
+082E8 A6 07                     	ldx temp7		; posicion tile X
+082EA 20 44 81                  	jsr COLL_TileBitmap8
+082ED A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+082EF 26 03                     	rol temp3
+082F1                           	COLL_PointInBitmap8 player_x,player_y,8,7
+082F1 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+082F3                           	;posición x
+082F3 B5 12                     	lda player_x,x
+082F5 18                        	clc
+082F6 69 08                     	adc #8
 082F8 4A                        	lsr
 082F9 4A                        	lsr
-082FA A8                        	tay					; posicion tile Y
-082FB A6 07                     	ldx temp7		; posicion tile X
-082FD 20 44 81                  	jsr COLL_TileBitmap8
-08300 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-08302 26 03                     	rol temp3
-08304                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
-08304 A5 03                     	lda temp3
-08306                           	; ldx #0 ; TEST Jugador 1
-08306 95 1B                     	sta player_wall,x ; Guarda la info de colisión
-08308 A8                        	tay 							; Copia las colisiones al reg Y
-08309 29 0A                     	and #%00001010		; Chequea las dos esquinas de la izquierda
-0830B F0 15                     	beq + 						; si no hay colisión, chequea el siguiente lado
-0830D B5 12                     		lda player_x,x	; Pero si hay colision:
-0830F 18                        		clc 						;
-08310 69 07                     		adc #7					; Acomoda al jugador en el tile de la derecha.
-08312 29 F8                     		and #%11111000	;
-08314 95 12                     		sta player_x,x	;
-08316 B5 16                     		lda player_xv,x ; Si se estaba moviendo...
-08318 F0 08                     		beq + 					;
-0831A A9 00                     			lda #0					; resetea la velocidad horizontal.
-0831C 95 16                     			sta player_xv,x 
-0831E 95 17                     			sta player_xvsub,x
-08320 95 13                     			sta player_xsub,x
-08322                           	+ 
-08322 98                        	tya 							; Recupera las colisiones
-08323 29 05                     	and #%00000101		; Chequea las dos esquinas del lado de la derecha
-08325 F0 12                     	beq + 						; si no hay colisión, termina, no pasa más nada
-08327 B5 12                     		lda player_x,x	; Pero si hay colision:
-08329 29 F8                     		and #%11111000	; Acomoda el jugador en el tile de la izquierda
-0832B 95 12                     		sta player_x,x	;
-0832D B5 16                     		lda player_xv,x ; Si se estaba moviendo...
-0832F F0 08                     		beq + 					;
-08331 A9 00                     			lda #0					; resetea la velocidad horizontal.
-08333 95 16                     			sta player_xv,x 
-08335 95 17                     			sta player_xvsub,x
-08337 95 13                     			sta player_xsub,x
-08339                           	+
-08339 60                        	rts
-0833A                           
-0833A                           ; Chequea colisión con las paredes en el eje Y
-0833A                           PLY_CheckWallsY:
-0833A                           	; (sub-rutina)
-0833A                           	; Chequea la colisión en sus altas
-0833A                           	; 0,0 --- 7,0
-0833A                           	;  |       |
-0833A                           	;  |       |
-0833A                           	; 0,8 --- 7,8
-0833A                           	; 
-0833A                           	COLL_SquareInTile8 player_x,player_y,coll,0,0,7,0,0,8,7,8
-0833A                           	; temp3 = coll_flags
-0833A                           	
-0833A                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
-0833A A9 00                     	lda #0
-0833C 85 03                     	sta temp3
-0833E                           	MemCopy2 #<coll,#>coll,temp0,temp1
-0833E A2 00                     	ldx #<coll
-08340 A0 8F                     	ldy #>coll
-08342 86 00                     	stx temp0
-08344 84 01                     	sty temp1
-08346                           	COLL_PointInBitmap8 player_x,player_y,0,0
-08346 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-08348                           	;posición x
-08348 B5 12                     	lda player_x,x
-0834A 18                        	clc
-0834B 69 00                     	adc #0
-0834D 4A                        	lsr
-0834E 4A                        	lsr
-0834F 4A                        	lsr
-08350 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-08352                           	;posición y
-08352 B5 14                     	lda player_y,x
-08354 18                        	clc
-08355 69 00                     	adc #0
-08357 4A                        	lsr
+082FA 4A                        	lsr
+082FB 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+082FD                           	;posición y
+082FD B5 14                     	lda player_y,x
+082FF 18                        	clc
+08300 69 07                     	adc #7
+08302 4A                        	lsr
+08303 4A                        	lsr
+08304 4A                        	lsr
+08305 A8                        	tay					; posicion tile Y
+08306 A6 07                     	ldx temp7		; posicion tile X
+08308 20 44 81                  	jsr COLL_TileBitmap8
+0830B A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+0830D 26 03                     	rol temp3
+0830F                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
+0830F A5 03                     	lda temp3
+08311                           	; ldx #0 ; TEST Jugador 1
+08311 95 1B                     	sta player_wall,x ; Guarda la info de colisión
+08313 A8                        	tay 							; Copia las colisiones al reg Y
+08314 29 0A                     	and #%00001010		; Chequea las dos esquinas de la izquierda
+08316 F0 15                     	beq + 						; si no hay colisión, chequea el siguiente lado
+08318 B5 12                     		lda player_x,x	; Pero si hay colision:
+0831A 18                        		clc 						;
+0831B 69 07                     		adc #7					; Acomoda al jugador en el tile de la derecha.
+0831D 29 F8                     		and #%11111000	;
+0831F 95 12                     		sta player_x,x	;
+08321 B5 16                     		lda player_xv,x ; Si se estaba moviendo...
+08323 F0 08                     		beq + 					;
+08325 A9 00                     			lda #0					; resetea la velocidad horizontal.
+08327 95 16                     			sta player_xv,x 
+08329 95 17                     			sta player_xvsub,x
+0832B 95 13                     			sta player_xsub,x
+0832D                           	+ 
+0832D 98                        	tya 							; Recupera las colisiones
+0832E 29 05                     	and #%00000101		; Chequea las dos esquinas del lado de la derecha
+08330 F0 12                     	beq + 						; si no hay colisión, termina, no pasa más nada
+08332 B5 12                     		lda player_x,x	; Pero si hay colision:
+08334 29 F8                     		and #%11111000	; Acomoda el jugador en el tile de la izquierda
+08336 95 12                     		sta player_x,x	;
+08338 B5 16                     		lda player_xv,x ; Si se estaba moviendo...
+0833A F0 08                     		beq + 					;
+0833C A9 00                     			lda #0					; resetea la velocidad horizontal.
+0833E 95 16                     			sta player_xv,x 
+08340 95 17                     			sta player_xvsub,x
+08342 95 13                     			sta player_xsub,x
+08344                           	+
+08344 60                        	rts
+08345                           
+08345                           ; Chequea colisión con las paredes en el eje Y
+08345                           PLY_CheckWallsY:
+08345                           	; (sub-rutina)
+08345                           	; Chequea la colisión en sus altas
+08345                           	; 0,0 --- 7,0
+08345                           	;  |       |
+08345                           	;  |       |
+08345                           	; 0,8 --- 7,8
+08345                           	; 
+08345                           	COLL_SquareInTile8 player_x,player_y,COLL_level_data,0,0,7,0,0,8,7,8
+08345                           	; temp3 = coll_flags
+08345                           	
+08345                           	MemCopy #0,temp3		;resetea las colisiones en las 4 esquinas
+08345 A9 00                     	lda #0
+08347 85 03                     	sta temp3
+08349                           	MemCopy2 #<COLL_level_data,#>COLL_level_data,temp0,temp1
+08349 A2 00                     	ldx #<COLL_level_data
+0834B A0 03                     	ldy #>COLL_level_data
+0834D 86 00                     	stx temp0
+0834F 84 01                     	sty temp1
+08351                           	COLL_PointInBitmap8 player_x,player_y,0,0
+08351 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+08353                           	;posición x
+08353 B5 12                     	lda player_x,x
+08355 18                        	clc
+08356 69 00                     	adc #0
 08358 4A                        	lsr
 08359 4A                        	lsr
-0835A A8                        	tay					; posicion tile Y
-0835B A6 07                     	ldx temp7		; posicion tile X
-0835D 20 44 81                  	jsr COLL_TileBitmap8
-08360 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-08362 26 03                     	rol temp3
-08364                           	COLL_PointInBitmap8 player_x,player_y,7,0
-08364 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-08366                           	;posición x
-08366 B5 12                     	lda player_x,x
-08368 18                        	clc
-08369 69 07                     	adc #7
-0836B 4A                        	lsr
-0836C 4A                        	lsr
-0836D 4A                        	lsr
-0836E 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-08370                           	;posición y
-08370 B5 14                     	lda player_y,x
-08372 18                        	clc
-08373 69 00                     	adc #0
-08375 4A                        	lsr
+0835A 4A                        	lsr
+0835B 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+0835D                           	;posición y
+0835D B5 14                     	lda player_y,x
+0835F 18                        	clc
+08360 69 00                     	adc #0
+08362 4A                        	lsr
+08363 4A                        	lsr
+08364 4A                        	lsr
+08365 A8                        	tay					; posicion tile Y
+08366 A6 07                     	ldx temp7		; posicion tile X
+08368 20 44 81                  	jsr COLL_TileBitmap8
+0836B A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+0836D 26 03                     	rol temp3
+0836F                           	COLL_PointInBitmap8 player_x,player_y,7,0
+0836F 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+08371                           	;posición x
+08371 B5 12                     	lda player_x,x
+08373 18                        	clc
+08374 69 07                     	adc #7
 08376 4A                        	lsr
 08377 4A                        	lsr
-08378 A8                        	tay					; posicion tile Y
-08379 A6 07                     	ldx temp7		; posicion tile X
-0837B 20 44 81                  	jsr COLL_TileBitmap8
-0837E A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-08380 26 03                     	rol temp3
-08382                           	COLL_PointInBitmap8 player_x,player_y,0,8
-08382 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-08384                           	;posición x
-08384 B5 12                     	lda player_x,x
-08386 18                        	clc
-08387 69 00                     	adc #0
-08389 4A                        	lsr
-0838A 4A                        	lsr
-0838B 4A                        	lsr
-0838C 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-0838E                           	;posición y
-0838E B5 14                     	lda player_y,x
-08390 18                        	clc
-08391 69 08                     	adc #8
-08393 4A                        	lsr
+08378 4A                        	lsr
+08379 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+0837B                           	;posición y
+0837B B5 14                     	lda player_y,x
+0837D 18                        	clc
+0837E 69 00                     	adc #0
+08380 4A                        	lsr
+08381 4A                        	lsr
+08382 4A                        	lsr
+08383 A8                        	tay					; posicion tile Y
+08384 A6 07                     	ldx temp7		; posicion tile X
+08386 20 44 81                  	jsr COLL_TileBitmap8
+08389 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+0838B 26 03                     	rol temp3
+0838D                           	COLL_PointInBitmap8 player_x,player_y,0,8
+0838D 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+0838F                           	;posición x
+0838F B5 12                     	lda player_x,x
+08391 18                        	clc
+08392 69 00                     	adc #0
 08394 4A                        	lsr
 08395 4A                        	lsr
-08396 A8                        	tay					; posicion tile Y
-08397 A6 07                     	ldx temp7		; posicion tile X
-08399 20 44 81                  	jsr COLL_TileBitmap8
-0839C A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-0839E 26 03                     	rol temp3
-083A0                           	COLL_PointInBitmap8 player_x,player_y,7,8
-083A0 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
-083A2                           	;posición x
-083A2 B5 12                     	lda player_x,x
-083A4 18                        	clc
-083A5 69 07                     	adc #7
-083A7 4A                        	lsr
-083A8 4A                        	lsr
-083A9 4A                        	lsr
-083AA 85 07                     	sta temp7 		; Guarda la posicion X en temp7
-083AC                           	;posición y
-083AC B5 14                     	lda player_y,x
-083AE 18                        	clc
-083AF 69 08                     	adc #8
-083B1 4A                        	lsr
+08396 4A                        	lsr
+08397 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+08399                           	;posición y
+08399 B5 14                     	lda player_y,x
+0839B 18                        	clc
+0839C 69 08                     	adc #8
+0839E 4A                        	lsr
+0839F 4A                        	lsr
+083A0 4A                        	lsr
+083A1 A8                        	tay					; posicion tile Y
+083A2 A6 07                     	ldx temp7		; posicion tile X
+083A4 20 44 81                  	jsr COLL_TileBitmap8
+083A7 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+083A9 26 03                     	rol temp3
+083AB                           	COLL_PointInBitmap8 player_x,player_y,7,8
+083AB 86 06                     	stx temp6 		; Guarda qué jugador está procesando temporalmente
+083AD                           	;posición x
+083AD B5 12                     	lda player_x,x
+083AF 18                        	clc
+083B0 69 07                     	adc #7
 083B2 4A                        	lsr
 083B3 4A                        	lsr
-083B4 A8                        	tay					; posicion tile Y
-083B5 A6 07                     	ldx temp7		; posicion tile X
-083B7 20 44 81                  	jsr COLL_TileBitmap8
-083BA A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
-083BC 26 03                     	rol temp3
-083BE                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
-083BE A5 03                     	lda temp3
-083C0                           	; ldx #0	; Jugador 1
-083C0 A8                        	tay 											; Copia las colisiones
-083C1 29 0C                     	and #%00001100						; Chequea las dos esquinas de arriba
-083C3 F0 11                     	beq + 										; si no hay colisión, chequea el siguiente lado
-083C5 B5 14                     		lda player_y,x					; Pero si hay colision:
-083C7 18                        		clc 										;
-083C8 69 07                     		adc #7									; Acomoda al jugador en el tile de abajo.
-083CA 29 F8                     		and #%11111000					;
-083CC 95 14                     		sta player_y,x					;
-083CE A9 00                     		lda #0									; Si está saltando, lo detiene
-083D0 95 18                     		sta player_yv,x 				;
-083D2 95 19                     		sta player_yvsub,x			;
-083D4 95 15                     		sta player_ysub,x 			;
-083D6                           	+
-083D6 98                        	tya 											; Recupera las colisiones
-083D7 29 03                     	and #%00000011						; Chequea las dos esquinas de abajo
-083D9 F0 19                     	beq + 										; si no hay colisión, está en el aire
-083DB                           		; A veces no entra acá siendo que si está tocando el suelo...
-083DB B5 14                     		lda player_y,x					; Pero si hay colision:
-083DD 29 F8                     		and #%11111000					; Acomoda el jugador en el tile de arriba
-083DF 95 14                     		sta player_y,x					;
-083E1 A9 00                     		lda #0									; Si está cayendo, lo detiene.
-083E3 95 18                     		sta player_yv,x 				; Ha tocado el suelo
-083E5 95 19                     		sta player_yvsub,x			;
-083E7 95 15                     		sta player_ysub,x 			;
-083E9 A9 01                     		lda #1		; Resetea los saltos disponibles.
-083EB 95 11                     		sta player_jumps,x			; 
-083ED A9 01                     		lda #1									; Indica que está tocando el suelo.
-083EF 95 1A                     		sta player_ground,x 		;
-083F1 4C F8 83                  		jmp ++									; termina
-083F4                           	+ 												; Si no toca el suelo, está en el aire
-083F4 A9 00                     		lda #0									;
-083F6 95 1A                     		sta player_ground,x 		;
-083F8                           	++
-083F8 60                        	rts
-083F9                           
-083F9                           ; Salto y gravedad del jugador
-083F9                           PLY_JumpFall:
-083F9                           	; Wall Jump
-083F9 B5 1C                     	lda player_wjcd,x 	; Decrementa el timer
-083FB F0 02                     	beq + 							; del cooldown del walljump
-083FD D6 1C                     		dec player_wjcd,x ; hasta llegar a 0.
-083FF                           	+
-083FF                           	; Salto de Ogmo
-083FF                           	IO_CheckButton 1,JP_A,1	; Si acaba de presionar el botón A:
-083FF A5 0B                     	lda joypad1 + (1 - 1)*2
-08401 29 80                     	and #JP_A
-08403 F0 04                     	beq @end
-08405                           	IF 1
-08405 45 0C                     		eor joypad1_prev + (1 - 1)*2
-08407 29 80                     		and #JP_A
-08409                           	ENDIF
-08409                           	@end:
-08409 C9 00                     	cmp #0
-0840B                           	; Regresa el estado de la flag "Zero"
-0840B                           	; También deja el estado del botón en A.
-0840B                           	; (A == 0: Falso -- A != 0: Verdadero)
-0840B F0 64                     	beq +++ 										;
-0840D B5 1A                     	lda player_ground,x 				; Si no está tocando el suelo:
-0840F D0 4E                     	bne ++											;
-08411                           		; Chequea si está presionando <
-08411                           		IO_CheckButton 1,JP_LEFT,0
-08411 A5 0B                     	lda joypad1 + (1 - 1)*2
-08413 29 02                     	and #JP_LEFT
-08415 F0 00                     	beq @end
-08417                           	IF 0
-08417                           		eor joypad1_prev + (1 - 1)*2
-08417                           		and #JP_LEFT
-08417                           	ENDIF
-08417                           	@end:
-08417 C9 00                     	cmp #0
-08419                           	; Regresa el estado de la flag "Zero"
-08419                           	; También deja el estado del botón en A.
-08419                           	; (A == 0: Falso -- A != 0: Verdadero)
-08419 F0 1D                     		beq +
-0841B B5 1B                     		lda player_wall,x 					; y si está tocando la pared izquierda
-0841D 29 0A                     		and #%00001010							;
-0841F F0 17                     		beq + 											;
-08421 A9 03                     			lda #3			; Hace un walljump hacia la derecha
-08423 95 16                     			sta player_xv,x 					; 
-08425 A9 FD                     			lda #-3 			; Salta un poco hacia arriba también
-08427 95 18                     			sta player_yv,x 					;
-08429 A9 80                     			lda #-128									; -2.5
-0842B 95 19                     			sta player_yvsub,x				;
-0842D A9 00                     			lda #0										; (redondea las velocidades)
-0842F 95 17                     			sta player_xvsub,x				;
-08431 A9 0A                     			lda #10 			; resetea el contador de cooldown
-08433 95 1C                     			sta player_wjcd,x 				; del walljump
-08435 4C 71 84                  			jmp +++										; Termina
-08438                           		+
-08438                           		; Chequea si está presionando >
-08438                           		IO_CheckButton 1,JP_RIGHT,0
-08438 A5 0B                     	lda joypad1 + (1 - 1)*2
-0843A 29 01                     	and #JP_RIGHT
-0843C F0 00                     	beq @end
-0843E                           	IF 0
-0843E                           		eor joypad1_prev + (1 - 1)*2
-0843E                           		and #JP_RIGHT
-0843E                           	ENDIF
-0843E                           	@end:
-0843E C9 00                     	cmp #0
-08440                           	; Regresa el estado de la flag "Zero"
-08440                           	; También deja el estado del botón en A.
-08440                           	; (A == 0: Falso -- A != 0: Verdadero)
-08440 F0 1D                     		beq ++
-08442 B5 1B                     		lda player_wall,x 					; y si está tocando la pared derecha
-08444 29 05                     		and #%00000101							;
-08446 F0 17                     		beq ++											;
-08448 A9 FD                     			lda #-3 		; Hace un walljump hacia la izquierda
-0844A 95 16                     			sta player_xv,x 					; 
-0844C A9 FD                     			lda #-3 			; Salta un poco hacia arriba también
-0844E 95 18                     			sta player_yv,x 					;
-08450 A9 80                     			lda #-128									; -2.5
-08452 95 19                     			sta player_yvsub,x				;
-08454 A9 00                     			lda #0										; (redondea las velocidades)
-08456 95 17                     			sta player_xvsub,x					;
-08458 A9 0A                     			lda #10 			; resetea el contador de cooldown
-0845A 95 1C                     			sta player_wjcd,x 				; del walljump
-0845C 4C 71 84                  			jmp +++ 									; Termina
-0845F                           	++
-0845F B5 11                     	lda player_jumps,x					; Y si quedan saltos disponibles:
-08461 F0 0E                     	beq +++ 										;
-08463 A9 FD                     		lda #-3				; Salta
-08465 95 18                     		sta player_yv,x 					;
-08467 A9 00                     		lda #0										; (pone la velocidad vertical a 4.0)
-08469 95 19                     		sta player_yvsub,x				;
-0846B B5 1A                     		lda player_ground,x 			; Si no está tocando el suelo:
-0846D D0 02                     		bne +++ 									;
-0846F D6 11                     			dec player_jumps,x			; quita un salto disponible.
-08471                           	+++
-08471                           	;Gravedad
-08471 B5 18                     	lda player_yv,x 						; Si la velocidad vertical actual
-08473 C9 04                     	cmp #4						; no supera la velocidad terminal:
-08475 10 14                     	bpl + 											;
-08477 B5 1A                     	lda player_ground,x 				; Si no está tocando el suelo:
-08479 D0 10                     	bne + 											;
-0847B                           		; Agrega gravedad.
-0847B                           		MOVE_ApplyVelocityAxisSub player_yv,player_yvsub,#0,#32
-0847B 18                        	clc 						;
-0847C B5 19                     	lda player_yvsub,x 	;
-0847E 69 20                     	adc #32 		;
-08480 95 19                     	sta player_yvsub,x 	;
-08482 B5 18                     	lda player_yv,x 			;
-08484 69 00                     	adc #0 				;
-08486 95 18                     	sta player_yv,x 			;
-08488 4C 91 84                  		jmp ++											; pasa directamente a aplicar la velocidad
-0848B                           	+ 
-0848B A9 00                     	lda #0											; Si alcanzó la velocidad terminal:
-0848D 95 19                     	sta player_yvsub,x					; Resetea la velocidad sub-pixel.
-0848F 95 15                     	sta player_ysub,x 					; Resetea la posición sub-pixel.
-08491                           	
-08491                           	++
-08491                           	; Mueve al jugador en el eje Y.
-08491                           	MOVE_ApplyVelocityAxisSub player_y,player_ysub,player_yv,player_yvsub
-08491 18                        	clc 						;
-08492 B5 15                     	lda player_ysub,x 	;
-08494 65 19                     	adc player_yvsub 		;
-08496 95 15                     	sta player_ysub,x 	;
-08498 B5 14                     	lda player_y,x 			;
-0849A 65 18                     	adc player_yv 				;
-0849C 95 14                     	sta player_y,x 			;
-0849E 60                        	rts
-0849F                           
-0849F                           
-0849F                           ASM_PROGRAM = $
-0849F                           
-0849F                           
-0849F                           ; Constantes del Juego
-0849F                           ; ---
-0849F                           
-0849F                           ; Variables de uso intensivo	(desde $0000 a $00FF)
-0849F                           .enum ASM_ZEROPAGE
+083B4 4A                        	lsr
+083B5 85 07                     	sta temp7 		; Guarda la posicion X en temp7
+083B7                           	;posición y
+083B7 B5 14                     	lda player_y,x
+083B9 18                        	clc
+083BA 69 08                     	adc #8
+083BC 4A                        	lsr
+083BD 4A                        	lsr
+083BE 4A                        	lsr
+083BF A8                        	tay					; posicion tile Y
+083C0 A6 07                     	ldx temp7		; posicion tile X
+083C2 20 44 81                  	jsr COLL_TileBitmap8
+083C5 A6 06                     	ldx temp6 	; recupera el jugador que estaba procesando
+083C7 26 03                     	rol temp3
+083C9                           	; Develve en A los resultados de las colisiones en las 4 esquinas. 
+083C9 A5 03                     	lda temp3
+083CB                           	; ldx #0	; Jugador 1
+083CB A8                        	tay 											; Copia las colisiones
+083CC 29 0C                     	and #%00001100						; Chequea las dos esquinas de arriba
+083CE F0 11                     	beq + 										; si no hay colisión, chequea el siguiente lado
+083D0 B5 14                     		lda player_y,x					; Pero si hay colision:
+083D2 18                        		clc 										;
+083D3 69 07                     		adc #7									; Acomoda al jugador en el tile de abajo.
+083D5 29 F8                     		and #%11111000					;
+083D7 95 14                     		sta player_y,x					;
+083D9 A9 00                     		lda #0									; Si está saltando, lo detiene
+083DB 95 18                     		sta player_yv,x 				;
+083DD 95 19                     		sta player_yvsub,x			;
+083DF 95 15                     		sta player_ysub,x 			;
+083E1                           	+
+083E1 98                        	tya 											; Recupera las colisiones
+083E2 29 03                     	and #%00000011						; Chequea las dos esquinas de abajo
+083E4 F0 19                     	beq + 										; si no hay colisión, está en el aire
+083E6                           		; A veces no entra acá siendo que si está tocando el suelo...
+083E6 B5 14                     		lda player_y,x					; Pero si hay colision:
+083E8 29 F8                     		and #%11111000					; Acomoda el jugador en el tile de arriba
+083EA 95 14                     		sta player_y,x					;
+083EC A9 00                     		lda #0									; Si está cayendo, lo detiene.
+083EE 95 18                     		sta player_yv,x 				; Ha tocado el suelo
+083F0 95 19                     		sta player_yvsub,x			;
+083F2 95 15                     		sta player_ysub,x 			;
+083F4 A9 01                     		lda #1		; Resetea los saltos disponibles.
+083F6 95 11                     		sta player_jumps,x			; 
+083F8 A9 01                     		lda #1									; Indica que está tocando el suelo.
+083FA 95 1A                     		sta player_ground,x 		;
+083FC 4C 03 84                  		jmp ++									; termina
+083FF                           	+ 												; Si no toca el suelo, está en el aire
+083FF A9 00                     		lda #0									;
+08401 95 1A                     		sta player_ground,x 		;
+08403                           	++
+08403 60                        	rts
+08404                           
+08404                           ; Salto y gravedad del jugador
+08404                           PLY_JumpFall:
+08404                           	; Wall Jump
+08404 B5 1C                     	lda player_wjcd,x 	; Decrementa el timer
+08406 F0 02                     	beq + 							; del cooldown del walljump
+08408 D6 1C                     		dec player_wjcd,x ; hasta llegar a 0.
+0840A                           	+
+0840A                           	; Salto de Ogmo
+0840A                           	IO_CheckButton 1,JP_A,1	; Si acaba de presionar el botón A:
+0840A A5 0B                     	lda joypad1 + (1 - 1)*2
+0840C 29 80                     	and #JP_A
+0840E F0 04                     	beq @end
+08410                           	IF 1
+08410 45 0C                     		eor joypad1_prev + (1 - 1)*2
+08412 29 80                     		and #JP_A
+08414                           	ENDIF
+08414                           	@end:
+08414 C9 00                     	cmp #0
+08416                           	; Regresa el estado de la flag "Zero"
+08416                           	; También deja el estado del botón en A.
+08416                           	; (A == 0: Falso -- A != 0: Verdadero)
+08416 F0 64                     	beq +++ 										;
+08418 B5 1A                     	lda player_ground,x 				; Si no está tocando el suelo:
+0841A D0 4E                     	bne ++											;
+0841C                           		; Chequea si está presionando <
+0841C                           		IO_CheckButton 1,JP_LEFT,0
+0841C A5 0B                     	lda joypad1 + (1 - 1)*2
+0841E 29 02                     	and #JP_LEFT
+08420 F0 00                     	beq @end
+08422                           	IF 0
+08422                           		eor joypad1_prev + (1 - 1)*2
+08422                           		and #JP_LEFT
+08422                           	ENDIF
+08422                           	@end:
+08422 C9 00                     	cmp #0
+08424                           	; Regresa el estado de la flag "Zero"
+08424                           	; También deja el estado del botón en A.
+08424                           	; (A == 0: Falso -- A != 0: Verdadero)
+08424 F0 1D                     		beq +
+08426 B5 1B                     		lda player_wall,x 					; y si está tocando la pared izquierda
+08428 29 0A                     		and #%00001010							;
+0842A F0 17                     		beq + 											;
+0842C A9 03                     			lda #3			; Hace un walljump hacia la derecha
+0842E 95 16                     			sta player_xv,x 					; 
+08430 A9 FD                     			lda #-3 			; Salta un poco hacia arriba también
+08432 95 18                     			sta player_yv,x 					;
+08434 A9 80                     			lda #-128									; -2.5
+08436 95 19                     			sta player_yvsub,x				;
+08438 A9 00                     			lda #0										; (redondea las velocidades)
+0843A 95 17                     			sta player_xvsub,x				;
+0843C A9 0A                     			lda #10 			; resetea el contador de cooldown
+0843E 95 1C                     			sta player_wjcd,x 				; del walljump
+08440 4C 7C 84                  			jmp +++										; Termina
+08443                           		+
+08443                           		; Chequea si está presionando >
+08443                           		IO_CheckButton 1,JP_RIGHT,0
+08443 A5 0B                     	lda joypad1 + (1 - 1)*2
+08445 29 01                     	and #JP_RIGHT
+08447 F0 00                     	beq @end
+08449                           	IF 0
+08449                           		eor joypad1_prev + (1 - 1)*2
+08449                           		and #JP_RIGHT
+08449                           	ENDIF
+08449                           	@end:
+08449 C9 00                     	cmp #0
+0844B                           	; Regresa el estado de la flag "Zero"
+0844B                           	; También deja el estado del botón en A.
+0844B                           	; (A == 0: Falso -- A != 0: Verdadero)
+0844B F0 1D                     		beq ++
+0844D B5 1B                     		lda player_wall,x 					; y si está tocando la pared derecha
+0844F 29 05                     		and #%00000101							;
+08451 F0 17                     		beq ++											;
+08453 A9 FD                     			lda #-3 		; Hace un walljump hacia la izquierda
+08455 95 16                     			sta player_xv,x 					; 
+08457 A9 FD                     			lda #-3 			; Salta un poco hacia arriba también
+08459 95 18                     			sta player_yv,x 					;
+0845B A9 80                     			lda #-128									; -2.5
+0845D 95 19                     			sta player_yvsub,x				;
+0845F A9 00                     			lda #0										; (redondea las velocidades)
+08461 95 17                     			sta player_xvsub,x					;
+08463 A9 0A                     			lda #10 			; resetea el contador de cooldown
+08465 95 1C                     			sta player_wjcd,x 				; del walljump
+08467 4C 7C 84                  			jmp +++ 									; Termina
+0846A                           	++
+0846A B5 11                     	lda player_jumps,x					; Y si quedan saltos disponibles:
+0846C F0 0E                     	beq +++ 										;
+0846E A9 FD                     		lda #-3				; Salta
+08470 95 18                     		sta player_yv,x 					;
+08472 A9 00                     		lda #0										; (pone la velocidad vertical a 4.0)
+08474 95 19                     		sta player_yvsub,x				;
+08476 B5 1A                     		lda player_ground,x 			; Si no está tocando el suelo:
+08478 D0 02                     		bne +++ 									;
+0847A D6 11                     			dec player_jumps,x			; quita un salto disponible.
+0847C                           	+++
+0847C                           	;Gravedad
+0847C B5 18                     	lda player_yv,x 						; Si la velocidad vertical actual
+0847E C9 04                     	cmp #4						; no supera la velocidad terminal:
+08480 10 14                     	bpl + 											;
+08482 B5 1A                     	lda player_ground,x 				; Si no está tocando el suelo:
+08484 D0 10                     	bne + 											;
+08486                           		; Agrega gravedad.
+08486                           		MOVE_ApplyVelocityAxisSub player_yv,player_yvsub,#0,#32
+08486 18                        	clc 						;
+08487 B5 19                     	lda player_yvsub,x 	;
+08489 69 20                     	adc #32 		;
+0848B 95 19                     	sta player_yvsub,x 	;
+0848D B5 18                     	lda player_yv,x 			;
+0848F 69 00                     	adc #0 				;
+08491 95 18                     	sta player_yv,x 			;
+08493 4C 9C 84                  		jmp ++											; pasa directamente a aplicar la velocidad
+08496                           	+ 
+08496 A9 00                     	lda #0											; Si alcanzó la velocidad terminal:
+08498 95 19                     	sta player_yvsub,x					; Resetea la velocidad sub-pixel.
+0849A 95 15                     	sta player_ysub,x 					; Resetea la posición sub-pixel.
+0849C                           	
+0849C                           	++
+0849C                           	; Mueve al jugador en el eje Y.
+0849C                           	MOVE_ApplyVelocityAxisSub player_y,player_ysub,player_yv,player_yvsub
+0849C 18                        	clc 						;
+0849D B5 15                     	lda player_ysub,x 	;
+0849F 65 19                     	adc player_yvsub 		;
+084A1 95 15                     	sta player_ysub,x 	;
+084A3 B5 14                     	lda player_y,x 			;
+084A5 65 18                     	adc player_yv 				;
+084A7 95 14                     	sta player_y,x 			;
+084A9 60                        	rts
+084AA                           
+084AA                           
+084AA                           ASM_PROGRAM = $
+084AA                           
+084AA                           
+084AA                           ; Constantes del Juego
+084AA                           ; ---
+084AA                           
+084AA                           ; Variables de uso intensivo	(desde $0000 a $00FF)
+084AA                           .enum ASM_ZEROPAGE
 00029                           ; (xxx bytes usados de librerías)
 00029                           ASM_ZEROPAGE = $
 00029                           .ende
-0849F                           
-0849F                           ; Variables normales			(desde $0300 a $0800)
-0849F                           ; Nada aún
-0849F                           
-0849F                           
-0849F                           .base ASM_PROGRAM	; Continuamos escribiendo programa
-0849F                           
-0849F                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
-0849F                           	; # - - - Arranque del Juego (luego del RESET)  - - - - #
-0849F                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
-0849F                           main_setup:
-0849F                           	
-0849F                           	; --- Inicializa el Juego ---
-0849F                           	
-0849F                           	; Carga el menú, establece el game_state a MENU
-0849F 20 5D 81                  	jsr GAME_LoadMenu
-084A2                           	
-084A2                           	MemCopy #0,two_players	; Modo Un jugador
-084A2 A9 00                     	lda #0
-084A4 85 10                     	sta two_players
-084A6                           	
-084A6 A9 00                     	lda #0				; Resetea el scroll
-084A8 85 08                     	sta scroll_x
-084AA 85 09                     	sta scroll_y
-084AC                           	
-084AC                           	
-084AC                           	
-084AC                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
-084AC                           	; # - - - Loop principal del Juego	(cada frame, después del VBLANK)  - - - #
-084AC                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
-084AC                           main_loop:
-084AC                           	;obtiene los joypads 
-084AC                           	IO_JoyUpdate						; (Macro)
-084AC                           	; Actualiza los botones previos
-084AC A6 0B                     	ldx joypad1
-084AE A4 0D                     	ldy joypad2
-084B0 86 0C                     	stx joypad1_prev
-084B2 84 0E                     	sty joypad2_prev
-084B4                           	; Actualiza los botones actuales
-084B4 A9 01                     	lda #$01
-084B6 85 0B                     	sta joypad1 	;le ponemos 1 a joypad1 para indicar cuándo llega a mirar los 8 botones.
-084B8 85 0D                     	sta joypad2 	; repetir con el joystick 2
-084BA 8D 16 40                  	sta JOYPAD1 	;decirle a los controles(joysticks) #1 y #2 que miren qué botones se están apretando.
-084BD 8D 17 40                  	sta JOYPAD2 	; repetir con el joystick 2
-084C0 A9 00                     	lda #$00
-084C2 8D 16 40                  	sta JOYPAD1 	;decirle al control(joystick) #1 que guarde lo botones que miró.
-084C5 8D 17 40                  	sta JOYPAD2 	; repetir con el joystick 2
-084C8                           	; Ahora le pediremos al joystick si los botones estaban presionados o no, uno por uno.
-084C8 18                        	clc
-084C9                           	-
-084C9 AD 16 40                  	lda JOYPAD1 	;preguntamos el estado del botón actual
-084CC 4A                        	lsr 					;mete el estado del botón actual en el carry flag.
-084CD 26 0B                     	rol joypad1 	;pone el bit7 en el Carry y lo que estaba en el Carry lo manda al bit0
-084CF 90 F8                     	bcc - 				;si se obtienen los 8 botones, el carry estará en 1, si no, volvemos a pedir un boton.
-084D1 18                        	clc 					;
-084D2                           	-
-084D2 AD 17 40                  	lda JOYPAD2 	; repetir con el joystick 2
-084D5 4A                        	lsr 					;
-084D6 26 0D                     	rol joypad2 	;
-084D8 90 F8                     	bcc - 				;
-084DA                           	
-084DA                           	; 
-084DA                           	; Chequea el estado del juego (game_state)
-084DA                           	; 
-084DA                           	
-084DA A5 0F                     	lda game_state
-084DC D0 03                     	bne +
-084DE 4C F2 84                  		jmp GameplayLogic
-084E1                           	+
-084E1 C9 01                     	cmp #1
-084E3 D0 03                     	bne +
-084E5 4C 2D 85                  		jmp PauseLogic
-084E8                           	+
-084E8 C9 02                     	cmp #2
-084EA D0 03                     	bne +
-084EC 4C 5E 85                  		jmp InterLogic
-084EF                           	+
-084EF 4C 61 85                  	jmp MenuLogic
-084F2                           
-084F2                           	; Lógica del juego
-084F2                           	;
-084F2                           	GameplayLogic:
-084F2                           		; Logica del jugador 1
-084F2                           		; 
-084F2                           		
-084F2                           		PLY_PhysicsUpdate 0 				; Físicas del jugador 1
-084F2                           	; Mueve al jugador horizontalmente dependiendo del input
-084F2                           	; Si acaba de hacer un Wall Jump, no acepta input por unos frames
-084F2 A2 00                     	ldx #0 	; Jugador 1
-084F4 B5 1C                     	lda player_wjcd,x 				;
-084F6 D0 03                     	bne + 										;
-084F8 20 BE 81                  		jsr PLY_JoyAccelerateAxis
-084FB                           	+
-084FB A2 00                     	ldx #0	; Jugador 1
-084FD                           	MOVE_ApplyVelocityAxisSub player_x,player_xsub,player_xv,player_xvsub
-084FD 18                        	clc 						;
-084FE B5 13                     	lda player_xsub,x 	;
-08500 65 17                     	adc player_xvsub 		;
-08502 95 13                     	sta player_xsub,x 	;
-08504 B5 12                     	lda player_x,x 			;
-08506 65 16                     	adc player_xv 				;
-08508 95 12                     	sta player_x,x 			;
-0850A                           	
-0850A                           	;Que no se pase del extremo izquierdo
-0850A A2 00                     	ldx #0 	; Jugador 1
-0850C B5 12                     	lda player_x,x
-0850E C9 05                     	cmp #5
-08510 30 08                     	bmi + 				; si player_x está entre 5 y 7:
-08512 C9 07                     	cmp #7
-08514 10 04                     	bpl +
-08516 A9 08                     		lda #8			; pone al player en la posición 8 en X
-08518 95 12                     		sta player_x,x
-0851A                           	+
-0851A                           
-0851A                           	;Chequea colisión con mapa de tiles. Eje X
-0851A A2 00                     	ldx #0 		; Jugador 1
-0851C A9 00                     	lda #0						; Resetea las flags de si está tocando las paredes
-0851E 95 1B                     	sta player_wall,x 	;
-08520 20 80 82                  	jsr PLY_CheckWallsX
-08523                           
-08523                           	;Maneja la gravedad y el salto del jugador
-08523 A2 00                     	ldx #0 		; Jugador 1
-08525 20 F9 83                  	jsr PLY_JumpFall	;
-08528                           	
-08528                           	; Chequea colisión con mapa de tiles. Eje Y
-08528 A2 00                     	ldx #0						; Jugador 1
-0852A 20 3A 83                  	jsr PLY_CheckWallsY
-0852D                           		
-0852D                           		; No deja que se pase de la parte superior del nivel
-0852D                           		;lda player_y
-0852D                           		;cmp #32 						;Y=32: parte superior del nivel, parte inferior del HUD
-0852D                           		;bpl + 							; si player_y es menor a 32,
-0852D                           		;cmp #24 						; y mayor a 24:
-0852D                           		;bmi + 							;
-0852D                           		;	lda #32 					; acomoda player_y en 32.
-0852D                           		;	sta player_y			;
-0852D                           		;	lda #0						;resetea la velocidad vertical.
-0852D                           		;	sta player_yv 		;
-0852D                           		;	sta player_yvsub	;
-0852D                           		;	sta player_ysub 	;
-0852D                           		;+
-0852D                           	
-0852D                           	; Cosas que se procesan aún cuando está pausado
-0852D                           	;
-0852D                           	PauseLogic:
-0852D                           		; Chequea si acaba de presionar el botón Start
-0852D                           		IO_CheckButton 1,JP_START,1
-0852D A5 0B                     	lda joypad1 + (1 - 1)*2
-0852F 29 10                     	and #JP_START
-08531 F0 04                     	beq @end
-08533                           	IF 1
-08533 45 0C                     		eor joypad1_prev + (1 - 1)*2
-08535 29 10                     		and #JP_START
-08537                           	ENDIF
-08537                           	@end:
-08537 C9 00                     	cmp #0
-08539                           	; Regresa el estado de la flag "Zero"
-08539                           	; También deja el estado del botón en A.
-08539                           	; (A == 0: Falso -- A != 0: Verdadero)
-08539 F0 06                     		beq +
-0853B A5 0F                     			lda game_state
-0853D 49 01                     			eor #1 		; Togglea el estado de pausa
-0853F 85 0F                     			sta game_state
-08541                           		+
-08541                           		; antes de finalizar el frame
-08541                           		; posicion del jugador 1
-08541 A6 12                     		ldx player_x
-08543 A4 14                     		ldy player_y
-08545 88                        		dey 							; sube Y un píxel para acomodar la posición del sprite
-08546 8E 07 02                  		stx PLAYER_1_SPR+SPRINFO_X
-08549 8C 04 02                  		sty PLAYER_1_SPR+SPRINFO_Y
-0854C                           		; posicion del jugador 2
-0854C A5 10                     		lda two_players
-0854E F0 0B                     		beq +
-08550 A6 1E                     			ldx player2_x
-08552 A4 20                     			ldy player2_y
-08554 88                        			dey 							; sube Y un píxel para acomodar la posición del sprite
-08555 8E 0B 02                  			stx PLAYER_2_SPR+SPRINFO_X
-08558 8C 08 02                  			sty PLAYER_2_SPR+SPRINFO_Y
-0855B                           		+
-0855B 4C 77 85                  	jmp FrameEnd
-0855E                           	
-0855E                           	
-0855E                           	; Lógica de intermission
-0855E                           	;
-0855E                           	InterLogic:
-0855E                           	; ...
-0855E 4C 77 85                  	jmp FrameEnd
-08561                           	
-08561                           	
-08561                           	; Logica del menú
-08561                           	;
-08561                           	MenuLogic:
-08561                           	IO_CheckButton 1,JP_START,1
-08561 A5 0B                     	lda joypad1 + (1 - 1)*2
-08563 29 10                     	and #JP_START
-08565 F0 04                     	beq @end
-08567                           	IF 1
-08567 45 0C                     		eor joypad1_prev + (1 - 1)*2
-08569 29 10                     		and #JP_START
-0856B                           	ENDIF
-0856B                           	@end:
-0856B C9 00                     	cmp #0
-0856D                           	; Regresa el estado de la flag "Zero"
-0856D                           	; También deja el estado del botón en A.
-0856D                           	; (A == 0: Falso -- A != 0: Verdadero)
-0856D F0 08                     	beq +
-0856F                           		; lda #GAME_STATE_GAMEPLAY
-0856F                           		; sta game_state 
-0856F 20 7F 81                  		jsr GAME_LoadLevel
-08572                           	  ; --- Inicializa jugador/es ---
-08572                           	  ; Esto debe hacerse al iniciar un nivel
-08572                           	  ; Player 1
-08572 A2 00                     	  ldx #0	; Variables del jug 1
-08574 20 A1 81                  	  jsr PLY_Spawn
-08577                           	  ; Player 2 (sólo si el modo 2 players está activado)
-08577                           	  ; lda two_players
-08577                           	  ; beq +
-08577                           	  ; 	ldx #PLY_DATA_OFFSET ; Variables del jug 2
-08577                           	  ; 	jsr PLY_Spawn
-08577                           	  ; +
-08577                           	+
-08577                           	
-08577                           	; Final del frame
-08577                           	;
-08577                           	FrameEnd:
-08577                           	
-08577                           	; Una vez ejecutada toda la lógica durante el frame, esperamos a que la PPU se desocupe y nos
-08577                           	; interrumpa para poder actualizar los gráficos.
-08577 E6 0A                     	inc waiting_nmi
-08579                           	@wait:
-08579 A5 0A                     		lda waiting_nmi
-0857B D0 FC                     		bne @wait 			;Entramos en un Loop infinito hasta que la PPU esté lista. Entonces saltaremos a "NMI:"
-0857D                           		; Cuando finalice la rutina de VBLANK (cuando finalice "NMI:"), volveremos aquí.
-0857D 4C AC 84                  jmp main_loop 			;volveremos a procesar toda la lógica para el siguiente frame.
-08580                           
-08580                           
-08580                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
-08580                           ; # - - - Sub-Rutinas del Juego (Funciones) - - - - - - #
-08580                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
-08580                           
-08580                           
-08580                           
-08580                           ; # - - - - - - - - - - - - - - - - - - - - #
-08580                           ; # - - -     Binarios externos     - - - - #
-08580                           ; # - - - - - - - - - - - - - - - - - - - - #
-08580 00 00 00 00 00 00 00 00.. .align 256
+084AA                           
+084AA                           ; Variables normales			(desde $0300 a $0800)
+084AA                           ; Nada aún
+084AA                           
+084AA                           
+084AA                           .base ASM_PROGRAM	; Continuamos escribiendo programa
+084AA                           
+084AA                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084AA                           	; # - - - Arranque del Juego (luego del RESET)  - - - - #
+084AA                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084AA                           main_setup:
+084AA                           	
+084AA                           	; --- Inicializa el Juego ---
+084AA                           	
+084AA                           	; Carga el menú, establece el game_state a MENU
+084AA 20 5D 81                  	jsr GAME_LoadMenu
+084AD                           	
+084AD                           	MemCopy #0,two_players	; Modo Un jugador
+084AD A9 00                     	lda #0
+084AF 85 10                     	sta two_players
+084B1                           	
+084B1 A9 00                     	lda #0				; Resetea el scroll
+084B3 85 08                     	sta scroll_x
+084B5 85 09                     	sta scroll_y
+084B7                           	
+084B7                           	
+084B7                           	
+084B7                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084B7                           	; # - - - Loop principal del Juego	(cada frame, después del VBLANK)  - - - #
+084B7                           	; # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
+084B7                           main_loop:
+084B7                           	;obtiene los joypads 
+084B7                           	IO_JoyUpdate						; (Macro)
+084B7                           	; Actualiza los botones previos
+084B7 A6 0B                     	ldx joypad1
+084B9 A4 0D                     	ldy joypad2
+084BB 86 0C                     	stx joypad1_prev
+084BD 84 0E                     	sty joypad2_prev
+084BF                           	; Actualiza los botones actuales
+084BF A9 01                     	lda #$01
+084C1 85 0B                     	sta joypad1 	;le ponemos 1 a joypad1 para indicar cuándo llega a mirar los 8 botones.
+084C3 85 0D                     	sta joypad2 	; repetir con el joystick 2
+084C5 8D 16 40                  	sta JOYPAD1 	;decirle a los controles(joysticks) #1 y #2 que miren qué botones se están apretando.
+084C8 8D 17 40                  	sta JOYPAD2 	; repetir con el joystick 2
+084CB A9 00                     	lda #$00
+084CD 8D 16 40                  	sta JOYPAD1 	;decirle al control(joystick) #1 que guarde lo botones que miró.
+084D0 8D 17 40                  	sta JOYPAD2 	; repetir con el joystick 2
+084D3                           	; Ahora le pediremos al joystick si los botones estaban presionados o no, uno por uno.
+084D3 18                        	clc
+084D4                           	-
+084D4 AD 16 40                  	lda JOYPAD1 	;preguntamos el estado del botón actual
+084D7 4A                        	lsr 					;mete el estado del botón actual en el carry flag.
+084D8 26 0B                     	rol joypad1 	;pone el bit7 en el Carry y lo que estaba en el Carry lo manda al bit0
+084DA 90 F8                     	bcc - 				;si se obtienen los 8 botones, el carry estará en 1, si no, volvemos a pedir un boton.
+084DC 18                        	clc 					;
+084DD                           	-
+084DD AD 17 40                  	lda JOYPAD2 	; repetir con el joystick 2
+084E0 4A                        	lsr 					;
+084E1 26 0D                     	rol joypad2 	;
+084E3 90 F8                     	bcc - 				;
+084E5                           	
+084E5                           	; 
+084E5                           	; Chequea el estado del juego (game_state)
+084E5                           	; 
+084E5                           	
+084E5 A5 0F                     	lda game_state
+084E7 D0 03                     	bne +
+084E9 4C FD 84                  		jmp GameplayLogic
+084EC                           	+
+084EC C9 01                     	cmp #1
+084EE D0 03                     	bne +
+084F0 4C 38 85                  		jmp PauseLogic
+084F3                           	+
+084F3 C9 02                     	cmp #2
+084F5 D0 03                     	bne +
+084F7 4C 69 85                  		jmp InterLogic
+084FA                           	+
+084FA 4C 6C 85                  	jmp MenuLogic
+084FD                           
+084FD                           	; Lógica del juego
+084FD                           	;
+084FD                           	GameplayLogic:
+084FD                           		; Logica del jugador 1
+084FD                           		; 
+084FD                           		
+084FD                           		PLY_PhysicsUpdate 0 				; Físicas del jugador 1
+084FD                           	; Mueve al jugador horizontalmente dependiendo del input
+084FD                           	; Si acaba de hacer un Wall Jump, no acepta input por unos frames
+084FD A2 00                     	ldx #0 	; Jugador 1
+084FF B5 1C                     	lda player_wjcd,x 				;
+08501 D0 03                     	bne + 										;
+08503 20 C9 81                  		jsr PLY_JoyAccelerateAxis
+08506                           	+
+08506 A2 00                     	ldx #0	; Jugador 1
+08508                           	MOVE_ApplyVelocityAxisSub player_x,player_xsub,player_xv,player_xvsub
+08508 18                        	clc 						;
+08509 B5 13                     	lda player_xsub,x 	;
+0850B 65 17                     	adc player_xvsub 		;
+0850D 95 13                     	sta player_xsub,x 	;
+0850F B5 12                     	lda player_x,x 			;
+08511 65 16                     	adc player_xv 				;
+08513 95 12                     	sta player_x,x 			;
+08515                           	
+08515                           	;Que no se pase del extremo izquierdo
+08515 A2 00                     	ldx #0 	; Jugador 1
+08517 B5 12                     	lda player_x,x
+08519 C9 05                     	cmp #5
+0851B 30 08                     	bmi + 				; si player_x está entre 5 y 7:
+0851D C9 07                     	cmp #7
+0851F 10 04                     	bpl +
+08521 A9 08                     		lda #8			; pone al player en la posición 8 en X
+08523 95 12                     		sta player_x,x
+08525                           	+
+08525                           
+08525                           	;Chequea colisión con mapa de tiles. Eje X
+08525 A2 00                     	ldx #0 		; Jugador 1
+08527 A9 00                     	lda #0						; Resetea las flags de si está tocando las paredes
+08529 95 1B                     	sta player_wall,x 	;
+0852B 20 8B 82                  	jsr PLY_CheckWallsX
+0852E                           
+0852E                           	;Maneja la gravedad y el salto del jugador
+0852E A2 00                     	ldx #0 		; Jugador 1
+08530 20 04 84                  	jsr PLY_JumpFall	;
+08533                           	
+08533                           	; Chequea colisión con mapa de tiles. Eje Y
+08533 A2 00                     	ldx #0						; Jugador 1
+08535 20 45 83                  	jsr PLY_CheckWallsY
+08538                           		
+08538                           		; No deja que se pase de la parte superior del nivel
+08538                           		;lda player_y
+08538                           		;cmp #32 						;Y=32: parte superior del nivel, parte inferior del HUD
+08538                           		;bpl + 							; si player_y es menor a 32,
+08538                           		;cmp #24 						; y mayor a 24:
+08538                           		;bmi + 							;
+08538                           		;	lda #32 					; acomoda player_y en 32.
+08538                           		;	sta player_y			;
+08538                           		;	lda #0						;resetea la velocidad vertical.
+08538                           		;	sta player_yv 		;
+08538                           		;	sta player_yvsub	;
+08538                           		;	sta player_ysub 	;
+08538                           		;+
+08538                           	
+08538                           	; Cosas que se procesan aún cuando está pausado
+08538                           	;
+08538                           	PauseLogic:
+08538                           		; Chequea si acaba de presionar el botón Start
+08538                           		IO_CheckButton 1,JP_START,1
+08538 A5 0B                     	lda joypad1 + (1 - 1)*2
+0853A 29 10                     	and #JP_START
+0853C F0 04                     	beq @end
+0853E                           	IF 1
+0853E 45 0C                     		eor joypad1_prev + (1 - 1)*2
+08540 29 10                     		and #JP_START
+08542                           	ENDIF
+08542                           	@end:
+08542 C9 00                     	cmp #0
+08544                           	; Regresa el estado de la flag "Zero"
+08544                           	; También deja el estado del botón en A.
+08544                           	; (A == 0: Falso -- A != 0: Verdadero)
+08544 F0 06                     		beq +
+08546 A5 0F                     			lda game_state
+08548 49 01                     			eor #1 		; Togglea el estado de pausa
+0854A 85 0F                     			sta game_state
+0854C                           		+
+0854C                           		; antes de finalizar el frame
+0854C                           		; posicion del jugador 1
+0854C A6 12                     		ldx player_x
+0854E A4 14                     		ldy player_y
+08550 88                        		dey 							; sube Y un píxel para acomodar la posición del sprite
+08551 8E 07 02                  		stx PLAYER_1_SPR+SPRINFO_X
+08554 8C 04 02                  		sty PLAYER_1_SPR+SPRINFO_Y
+08557                           		; posicion del jugador 2
+08557 A5 10                     		lda two_players
+08559 F0 0B                     		beq +
+0855B A6 1E                     			ldx player2_x
+0855D A4 20                     			ldy player2_y
+0855F 88                        			dey 							; sube Y un píxel para acomodar la posición del sprite
+08560 8E 0B 02                  			stx PLAYER_2_SPR+SPRINFO_X
+08563 8C 08 02                  			sty PLAYER_2_SPR+SPRINFO_Y
+08566                           		+
+08566 4C 82 85                  	jmp FrameEnd
+08569                           	
+08569                           	
+08569                           	; Lógica de intermission
+08569                           	;
+08569                           	InterLogic:
+08569                           	; ...
+08569 4C 82 85                  	jmp FrameEnd
+0856C                           	
+0856C                           	
+0856C                           	; Logica del menú
+0856C                           	;
+0856C                           	MenuLogic:
+0856C                           	IO_CheckButton 1,JP_START,1
+0856C A5 0B                     	lda joypad1 + (1 - 1)*2
+0856E 29 10                     	and #JP_START
+08570 F0 04                     	beq @end
+08572                           	IF 1
+08572 45 0C                     		eor joypad1_prev + (1 - 1)*2
+08574 29 10                     		and #JP_START
+08576                           	ENDIF
+08576                           	@end:
+08576 C9 00                     	cmp #0
+08578                           	; Regresa el estado de la flag "Zero"
+08578                           	; También deja el estado del botón en A.
+08578                           	; (A == 0: Falso -- A != 0: Verdadero)
+08578 F0 08                     	beq +
+0857A                           		; lda #GAME_STATE_GAMEPLAY
+0857A                           		; sta game_state 
+0857A 20 7F 81                  		jsr GAME_LoadLevel
+0857D                           	  ; --- Inicializa jugador/es ---
+0857D                           	  ; Esto debe hacerse al iniciar un nivel
+0857D                           	  ; Player 1
+0857D A2 00                     	  ldx #0	; Variables del jug 1
+0857F 20 AC 81                  	  jsr PLY_Spawn
+08582                           	  ; Player 2 (sólo si el modo 2 players está activado)
+08582                           	  ; lda two_players
+08582                           	  ; beq +
+08582                           	  ; 	ldx #PLY_DATA_OFFSET ; Variables del jug 2
+08582                           	  ; 	jsr PLY_Spawn
+08582                           	  ; +
+08582                           	+
+08582                           	
+08582                           	; Final del frame
+08582                           	;
+08582                           	FrameEnd:
+08582                           	
+08582                           	; Una vez ejecutada toda la lógica durante el frame, esperamos a que la PPU se desocupe y nos
+08582                           	; interrumpa para poder actualizar los gráficos.
+08582 E6 0A                     	inc waiting_nmi
+08584                           	@wait:
+08584 A5 0A                     		lda waiting_nmi
+08586 D0 FC                     		bne @wait 			;Entramos en un Loop infinito hasta que la PPU esté lista. Entonces saltaremos a "NMI:"
+08588                           		; Cuando finalice la rutina de VBLANK (cuando finalice "NMI:"), volveremos aquí.
+08588 4C B7 84                  jmp main_loop 			;volveremos a procesar toda la lógica para el siguiente frame.
+0858B                           
+0858B                           
+0858B                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+0858B                           ; # - - - Sub-Rutinas del Juego (Funciones) - - - - - - #
+0858B                           ; # - - - - - - - - - - - - - - - - - - - - - - - - - - #
+0858B                           
+0858B                           
+0858B                           
+0858B                           ; # - - - - - - - - - - - - - - - - - - - - #
+0858B                           ; # - - -     Binarios externos     - - - - #
+0858B                           ; # - - - - - - - - - - - - - - - - - - - - #
+0858B 00 00 00 00 00 00 00 00.. .align 256
 08600                           ; Información de fondo + atributos de color
 08600                           bg:
 08600 00 00 00 00 00 00 00 00.. .incbin "res\pantalla.nam"	;(tamaño: 1024 Bytes)
@@ -2078,8 +2095,11 @@
 08A00 30 30 30 30 30 30 30 30.. .incbin "res\menu.nam"	; (1024 bytes)
 08E00                           
 08E00                           metatiles:
-08E00                           .include "res\metatiles.asm"	; (1024 bytes)
+08E00                           .include "res\metatiles.asm"	; (64 bytes)
 08E00                           ; Lista de metatiles
+08E00                           ; +0 | +1
+08E00                           ; ---+---
+08E00                           ; +2 | +3
 08E00                           
 08E00                           ; BLOCK Type (0 - 7)
 08E00 00 00 00 00               .byte $00, $00, $00, $00	; Tile $00
@@ -2103,7 +2123,7 @@
 08E40                           
 08E40 00 00 00 00 00 00 00 00.. .align 256
 08F00                           
-08F00                           coll: 		;informacion de colision del nivel (116 bytes)
+08F00                           coll: 		;informacion de colision del nivel (120 bytes)
 08F00 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
 08F04 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000
 08F08 00 00 00 00               .byte %00000000, %00000000, %00000000, %00000000

@@ -11,7 +11,7 @@
 
 
 ;;	OTRAS VARIABLES
-
+COLL_level_data = $0300
 
 ;;	MACROS
 ;	Detecta colisión entre dos rectángulos		(Especificar addressing mode)

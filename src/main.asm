@@ -194,7 +194,7 @@ metatiles:
 
 .align 256
 
-coll: 		;informacion de colision del nivel (116 bytes)
+coll: 		;informacion de colision del nivel (120 bytes)
 .byte %00000000, %00000000, %00000000, %00000000
 .byte %00000000, %00000000, %00000000, %00000000
 .byte %00000000, %00000000, %00000000, %00000000

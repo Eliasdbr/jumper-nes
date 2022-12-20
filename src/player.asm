@@ -225,7 +225,7 @@ PLY_CheckWallsX:
 	;   |       |
 	; -1,7 --- 8,7
 	; 
-	COLL_SquareInTile8 player_x,player_y,coll,-1,0,8,0,-1,7,8,7
+	COLL_SquareInTile8 player_x,player_y,COLL_level_data,-1,0,8,0,-1,7,8,7
 	; ldx #0 ; TEST Jugador 1
 	sta player_wall,x ; Guarda la info de colisión
 	tay 							; Copia las colisiones al reg Y
@@ -267,7 +267,7 @@ PLY_CheckWallsY:
 	;  |       |
 	; 0,8 --- 7,8
 	; 
-	COLL_SquareInTile8 player_x,player_y,coll,0,0,7,0,0,8,7,8
+	COLL_SquareInTile8 player_x,player_y,COLL_level_data,0,0,7,0,0,8,7,8
 	; ldx #0	; Jugador 1
 	tay 											; Copia las colisiones
 	and #%00001100						; Chequea las dos esquinas de arriba

@@ -59,14 +59,16 @@ GAME_LoadMenu:
 	; Termina la sub-rutina
 	rts
 
-; Carga un nivel (bg solamente)
+; Carga un nivel
 GAME_LoadLevel:
 	; Deshabilita las interrupciones
 	sei
 	; Desactiva los gráficos
 	PPU_Disable 0 						; Es un macro.
-	; Cambia el estado del juego a MENU
+	; Cambia el estado del juego a GAMEPLAY
 	MemCopy #GAME_STATE_GAMEPLAY,game_state
+	; Carga la colisión (temporal)
+	MemBulkCopy coll,COLL_level_data,120	; MemBulkCopy from,to,amount
 	; Carga el background del menú
 	ldx #<bg 			; Byte bajo
 	ldy #>bg 			; Byte alto

@@ -65,6 +65,15 @@ ASM_ZEROPAGE = $
 	sty to2
 .endm
 
+.macro MemBulkCopy from,to,amount			; Copia <amount> bytes. Amount debe ser entre 1 y 256 inclusive (Especificar address mode)
+	ldx #amount-1
+	-
+		lda from,x
+		sta to,x
+		dex
+	bne -
+.endm
+
 .macro PushAXY		; Empuja los registros A,X,Y a la pila.
 	pha
 	txa
